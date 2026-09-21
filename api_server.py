@@ -61,18 +61,35 @@ def _normalize_dsn(raw_url: str) -> str:
     # Unquote first in case it's already partially encoded, then re-encode cleanly.
     user_enc = quote(unquote(user), safe="")
     pwd_enc = quote(unquote(pwd), safe="")
-    return f"{scheme}{user_enc}:{pwd_enc}@{rest.strip()}"
+    rest = rest.strip()
+    # psycopg2's DSN parser (older libpq) rejects the 'pgbouncer' query param
+    # that Supabase's pooler URL includes — it's a client-library hint, not a
+    # real libpq connection option, so drop it if present.
+    if "?" in rest:
+        host_part, query = rest.split("?", 1)
+        kept = [p for p in query.split("&") if p and not p.startswith("pgbouncer")]
+        rest = host_part + ("?" + "&".join(kept) if kept else "")
+    return f"{scheme}{user_enc}:{pwd_enc}@{rest}"
+
+
+def _mask_dsn_for_log(dsn: str) -> str:
+    """Always redact the password, even if the DSN is malformed and has
+    no '@' separator (never fall back to printing it verbatim)."""
+    m = re.match(r"^(postgres(?:ql)?://[^:/]+:)(.*)$", dsn)
+    if not m:
+        return "<unparseable DSN, length={}>".format(len(dsn))
+    prefix, remainder = m.groups()
+    at_idx = remainder.rfind("@")
+    if at_idx == -1:
+        return prefix + "***<no @ found in remainder, length={}>".format(len(remainder))
+    return prefix + "***" + remainder[at_idx:]
 
 
 _normalized = _normalize_dsn(DATABASE_URL)
 try:
     db = psycopg2.connect(_normalized)
-except Exception as exc:
-    # Print a masked version (password redacted) so misconfiguration is
-    # diagnosable from logs without ever exposing the secret.
-    _masked = re.sub(r"(postgres(?:ql)?://[^:]+:)[^@]+(@)", r"\1***\2", _normalized)
-    print(f"DATABASE_URL connection failed. Masked DSN attempted: {_masked}")
-    print(f"Raw length: {len(DATABASE_URL)} chars, starts_with_scheme: {DATABASE_URL.startswith(('postgres://', 'postgresql://'))}")
+except Exception:
+    print(f"DATABASE_URL connection failed. Masked DSN: {_mask_dsn_for_log(_normalized)}")
     raise
 db.autocommit = True
 
