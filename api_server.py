@@ -5,7 +5,9 @@ Runs on port 8000 locally, or on the port Render provides via $PORT.
 Uses Postgres (Supabase) via DATABASE_URL for durable, cross-device storage.
 """
 import os
+import re
 from contextlib import asynccontextmanager
+from urllib.parse import quote, unquote
 
 import psycopg2
 import psycopg2.extras
@@ -17,7 +19,32 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set — configure the Supabase Postgres connection string.")
 
-db = psycopg2.connect(DATABASE_URL)
+
+def _normalize_dsn(raw_url: str) -> str:
+    """Re-encode the userinfo section so special characters in the password
+    (#, @, /, %, ? etc.) can't break URL parsing, regardless of how the
+    connection string was pasted in."""
+    m = re.match(r"^(postgres(?:ql)?://)(.+)$", raw_url)
+    if not m:
+        return raw_url
+    scheme, remainder = m.groups()
+    if "@" not in remainder:
+        return raw_url
+    # Host (and everything after) never contains '@'; split at the LAST '@'
+    # so an unescaped '@' inside the password doesn't get mistaken for the
+    # userinfo/host boundary.
+    userinfo, rest = remainder.rsplit("@", 1)
+    if ":" in userinfo:
+        user, pwd = userinfo.split(":", 1)
+    else:
+        user, pwd = userinfo, ""
+    # Unquote first in case it's already partially encoded, then re-encode cleanly.
+    user_enc = quote(unquote(user), safe="")
+    pwd_enc = quote(unquote(pwd), safe="")
+    return f"{scheme}{user_enc}:{pwd_enc}@{rest}"
+
+
+db = psycopg2.connect(_normalize_dsn(DATABASE_URL))
 db.autocommit = True
 
 
