@@ -16,16 +16,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 def _extract_dsn(raw: str) -> str:
-    """Pull the actual postgres://... URL out of whatever was pasted,
-    discarding any leading comment lines (Supabase's dashboard shows a
-    '# Connect via ...' hint line above the URL, which is easy to copy
-    along with it) and surrounding whitespace/quotes."""
-    raw = (raw or "").strip().strip('"').strip("'")
-    for line in raw.splitlines():
-        line = line.strip().strip('"').strip("'")
-        if line.startswith("postgres://") or line.startswith("postgresql://"):
-            return line
-    return raw
+    """Pull the actual postgres://... URL out of whatever was pasted, no
+    matter what precedes it on the same or a previous line (Supabase's
+    dashboard shows a '# Connect via ...' hint that's easy to copy along
+    with the URL, and a single-line env-var field can turn the newline
+    between them into a literal '\\n', a space, or nothing at all)."""
+    raw = (raw or "").strip()
+    idx = raw.find("postgresql://")
+    if idx == -1:
+        idx = raw.find("postgres://")
+    if idx == -1:
+        return raw.strip('"').strip("'")
+    tail = raw[idx:].strip().strip('"').strip("'")
+    # Cut off at the first whitespace/newline/backslash-n that follows the URL
+    # (in case trailing text got appended after it too).
+    tail = re.split(r"\s|\\n", tail)[0]
+    return tail
 
 
 DATABASE_URL = _extract_dsn(os.environ.get("DATABASE_URL") or "")
