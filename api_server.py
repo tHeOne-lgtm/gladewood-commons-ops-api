@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip().strip('"').strip("'")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set — configure the Supabase Postgres connection string.")
 
@@ -24,6 +24,7 @@ def _normalize_dsn(raw_url: str) -> str:
     """Re-encode the userinfo section so special characters in the password
     (#, @, /, %, ? etc.) can't break URL parsing, regardless of how the
     connection string was pasted in."""
+    raw_url = raw_url.strip()
     m = re.match(r"^(postgres(?:ql)?://)(.+)$", raw_url)
     if not m:
         return raw_url
@@ -41,10 +42,19 @@ def _normalize_dsn(raw_url: str) -> str:
     # Unquote first in case it's already partially encoded, then re-encode cleanly.
     user_enc = quote(unquote(user), safe="")
     pwd_enc = quote(unquote(pwd), safe="")
-    return f"{scheme}{user_enc}:{pwd_enc}@{rest}"
+    return f"{scheme}{user_enc}:{pwd_enc}@{rest.strip()}"
 
 
-db = psycopg2.connect(_normalize_dsn(DATABASE_URL))
+_normalized = _normalize_dsn(DATABASE_URL)
+try:
+    db = psycopg2.connect(_normalized)
+except Exception as exc:
+    # Print a masked version (password redacted) so misconfiguration is
+    # diagnosable from logs without ever exposing the secret.
+    _masked = re.sub(r"(postgres(?:ql)?://[^:]+:)[^@]+(@)", r"\1***\2", _normalized)
+    print(f"DATABASE_URL connection failed. Masked DSN attempted: {_masked}")
+    print(f"Raw length: {len(DATABASE_URL)} chars, starts_with_scheme: {DATABASE_URL.startswith(('postgres://', 'postgresql://'))}")
+    raise
 db.autocommit = True
 
 
