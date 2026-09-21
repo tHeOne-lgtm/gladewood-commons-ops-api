@@ -15,7 +15,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip().strip('"').strip("'")
+def _extract_dsn(raw: str) -> str:
+    """Pull the actual postgres://... URL out of whatever was pasted,
+    discarding any leading comment lines (Supabase's dashboard shows a
+    '# Connect via ...' hint line above the URL, which is easy to copy
+    along with it) and surrounding whitespace/quotes."""
+    raw = (raw or "").strip().strip('"').strip("'")
+    for line in raw.splitlines():
+        line = line.strip().strip('"').strip("'")
+        if line.startswith("postgres://") or line.startswith("postgresql://"):
+            return line
+    return raw
+
+
+DATABASE_URL = _extract_dsn(os.environ.get("DATABASE_URL") or "")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set — configure the Supabase Postgres connection string.")
 
