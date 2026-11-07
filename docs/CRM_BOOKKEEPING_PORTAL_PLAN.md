@@ -1,0 +1,223 @@
+# Gladewood Custom CRM, Bookkeeping, and Tenant/Case Manager Portal
+
+**Status:** Approved with amendments on 2026-11-07. Phase 0 in progress.
+**Owner:** Paul Selman, Gladewood Commons, LLC
+**Disclaimer:** This plan is engineering guidance. It is not legal advice (not an attorney) and not accounting advice (not a CPA). Items marked "Verify" need review by your Tennessee landlord/tenant attorney or CPA before launch.
+
+Evidence labels: **Source fact** (verified from a retrieved page or this repo), **Analysis** (my reasoning), **Assumption** (needs your confirmation).
+
+## 0. Decision log
+
+| Date | Decision | Effect on this plan |
+|---|---|---|
+| 2026-11-07 | Books module is an **accounts receivable subledger in this system plus a sync to Zoho Books**, not a full general ledger. Zoho Books is the book of record for the chart of accounts, bills, banking, reconciliation, and financial statements. | Section 5 rows marked "Build" for chart of accounts, journals, period locking, bills, expenses, banking, reconciliation, and financial statements change to "Zoho Books via sync". This system keeps tenancies, invoices, payments, deposits, rent roll, AR aging, and the portal, and pushes customers, invoices, and payments to Zoho Books. Phase 4 shrinks to the sync and its reconciliation report. |
+| 2026-11-07 | Phase 0 starts. | See `docs/PLAN_ASSESSMENT.md` Section 6 for the added Phase 0 items. |
+| 2026-11-07 | Phase 0 complete in code; Phase 1 (CRM core) built. | Custom fields are typed columns plus a bounded `extra` JSON object, not a field registry (per assessment Section 3.2). Saved custom views deferred; list filters cover the Phase 1 need. Workflows, email, forms, and dashboards remain Phase 2. Legacy tables are migrated by `python -m app.cli migrate-legacy` with a dry-run rejection report and are not dropped. |
+
+## 1. Decision summary
+
+**Recommendation (Analysis):** Build one system with three surfaces on top of the existing FastAPI + Postgres (Supabase) backend:
+
+1. **CRM module** with Bigin-equivalent functions for the workflows Gladewood runs (pipelines, contacts, companies, activities, automations, email, reports).
+2. **Books module** with Zoho Books-equivalent bookkeeping (double-entry ledger, invoices, payments, bills, banking, reconciliation, financial statements).
+3. **Portal** for tenants and case managers (balances, documents, payments, maintenance requests).
+
+**On "identical" (Analysis):** Literal one-to-one parity with Bigin is not a sensible target. Bigin ships built-in telephony, WhatsApp, a mobile app, a business card scanner, AI assistant, a marketplace of add-ons, and 30+ third-party integrations (Source fact, bigin.com/pricing, retrieved 2026-11-07). Cloning all of that costs far more than it returns. This plan gives full parity on the core data model and workflow engine, and uses a vendor API (Gmail, Twilio, Stripe, Plaid) for the rest.
+
+**Cheaper alternative to weigh (Analysis):** Bigin lists Zoho Books, Zoho Invoice, QuickBooks, and Zoho Sign integrations on its higher edition (Source fact, same page), and Zoho Books has its own Customer Portal that supports payments and custom modules (Source fact, zoho.com/books/help/customer-portal). A Zoho-only setup would not model rooms, beds, vouchers, or third-party payers well. That gap is the main reason to build custom.
+
+## 2. What exists today
+
+**Source fact (this repo, `api_server.py`):**
+
+- One file, FastAPI, `psycopg2` against Supabase Postgres via `DATABASE_URL`.
+- Tables: `properties`, `prospects`, `residents`, `conflict_log`, `financials` (key/value).
+- No authentication, no users, no roles.
+- CORS is `allow_origins=["*"]`.
+- Money and dates are stored as `TEXT`.
+- `residents` and `prospects` store initials and free-text `notes`.
+- No ledger, invoices, payments, documents, or maintenance tables.
+
+**Analysis (blockers before any portal ships):**
+
+| Blocker | Why it blocks the portal |
+|---|---|
+| No auth or authorization | Tenants and case managers cannot be isolated from each other's data |
+| Open CORS and unauthenticated writes | Any site can read or alter resident records |
+| Money as TEXT | Cannot support a ledger or reconciliation |
+| Free-text `notes` on residents | Invites health or disability details that Fair Housing and ADA rules restrict |
+| Single file | Four more modules will not fit; needs routers and migrations |
+
+## 3. Target architecture
+
+**Stack (Assumption, confirm in Section 9):**
+
+- **API:** FastAPI modular monolith (routers per module), Pydantic v2, SQLAlchemy 2 + Alembic migrations, psycopg 3.
+- **DB:** Existing Supabase Postgres. `NUMERIC(14,2)` for money, `TIMESTAMPTZ` for time, `DATE` for dates.
+- **Auth:** Supabase Auth issuing JWTs; FastAPI verifies the token and loads a role. Staff use MFA.
+- **Front ends:** One React/Next.js repo with two apps: `/staff` (CRM + Books) and `/portal` (tenants, case managers). Portal on its own subdomain and CORS origin.
+- **Payments:** Stripe (card and ACH Direct Debit) using hosted Checkout or Payment Element, so card data never touches Gladewood servers (PCI SAQ A scope). Webhooks with signature check and idempotency keys.
+- **Bank feeds:** Plaid (or manual CSV import in Phase 3).
+- **Files:** Supabase Storage private buckets, signed URLs, 5 minute expiry.
+- **Email:** Gmail API / SMTP provider for two-way mail and templates. Telephony and SMS via Twilio in a later phase.
+- **Jobs:** Scheduled worker (Render cron) for recurring invoices, late fees, reminders, bank sync.
+- **Hosting:** Render (already in use per README).
+
+**Modules and boundaries (Analysis):**
+
+```
+api/
+  core/        auth, roles, audit log, config, db
+  crm/         contacts, companies, pipelines, deals, activities, products, workflows, email, reports
+  books/       accounts, journal, invoices, payments, bills, expenses, banking, reports
+  housing/     properties, rooms, leases, tenancies, deposits, maintenance, documents
+  portal/      read/write endpoints scoped to the logged-in tenant or case manager
+  integrations/ stripe, plaid, gmail, twilio
+```
+
+The portal never queries CRM or Books tables directly. It calls `portal/` services that apply access grants (Section 6).
+
+## 4. CRM module: Bigin parity map
+
+**Source fact (bigin.com pages retrieved 2026-11-07):** Bigin modules are Contacts, Companies, Pipelines (deals), Products, Activities (tasks, events, calls), Notes, Dashboards. It also has team pipelines and sub-pipelines, timeline, audit log, workflows (instant and scheduled), signals, custom fields (10 per module on the higher edition), tags, lookup/unique/user fields, import/export, duplicate cleanup, roles and profiles, web forms, mass email with insights, email templates, and target meter.
+
+| Bigin capability | Plan | Phase |
+|---|---|---|
+| Contacts, Companies, Notes, Tags | Build | 1 |
+| Pipelines, stages, kanban + list views, sub-pipelines, team pipelines | Build | 1 |
+| Activities (tasks, events, calls), reminders, calendar | Build; Google Calendar sync later | 1 |
+| Custom fields and custom views (more than Bigin's limit) | Build (JSONB + field registry) | 1 |
+| Timeline and audit log | Build (append-only) | 1 |
+| Import/export, duplicate cleanup | Build | 1 |
+| Roles and profiles | Build | 1 |
+| Products (rooms/bed types as products) | Build; ties into Books items | 2 |
+| Web forms (inquiry, referral, maintenance) | Build | 2 |
+| Workflows (instant, scheduled) | Build rule engine: trigger, condition, action | 2 |
+| Two-way email, templates, mass email + tracking | Build on Gmail API | 2 |
+| Dashboards, reports, target meter | Build | 2 |
+| Document signing | Integrate (Dropbox Sign or DocuSign) | 3 |
+| Telephony, call recording, WhatsApp | Integrate (Twilio); defer | 4 |
+| Business card scanner, AI assistant, marketplace | Not building | n/a |
+
+**Gladewood-specific pipelines (Analysis):** Property/landlord (existing), Resident inquiry to move-in (replaces `prospects`), Referral partner/case manager outreach, Maintenance.
+
+## 5. Books module: Zoho Books parity map
+
+**Amended 2026-11-07 (see Decision log):** rows below marked "Build" for general ledger functions are superseded. This system builds only the AR subledger (tenancies, invoices, recurring rent, payments, deposits, rent roll, AR aging) and a one-way sync of customers, invoices, and payments into Zoho Books through its API. Zoho Books owns the chart of accounts, journals, bills, banking, reconciliation, period locks, and statements. The ledger rules at the end of this section still apply to the subledger: every invoice and payment is immutable once synced, and corrections are credit notes or reversing payments.
+
+**Source fact (zoho.com/books features and help index, retrieved 2026-11-07):** Zoho Books covers chart of accounts, manual and recurring journals, base currency adjustments, transaction locking, customers and vendors, invoices, recurring invoices, payments received, retainer invoices, payment links, bills, vendor credits, expenses, purchase orders, banking with feeds and transaction rules, reconciliation, customer and vendor portals, reminders, timesheets, taxes, multi-currency, reports, and API.
+
+| Zoho Books capability | Plan | Phase |
+|---|---|---|
+| Chart of accounts (asset, liability, equity, income, expense) | Build; seed a rental-property chart | 3 |
+| Double-entry journal, manual and recurring journals | Build; immutable lines, reversal entries only | 3 |
+| Transaction locking by period | Build | 3 |
+| Customers (tenants, payers) and vendors | Link to CRM contacts, one identity | 3 |
+| Invoices, recurring invoices, credit notes | Build; monthly rent profiles per tenancy | 3 |
+| Payments received, apply to invoices, refunds | Build; Stripe webhooks post to ledger | 3 |
+| Payment links, online pay | Build via Stripe | 3 |
+| Reminders and late fee rules | Build via scheduler | 3 |
+| Bills, vendor credits, expenses, receipts | Build | 4 |
+| Banking: feeds, rules, categorize, reconcile | Build on Plaid; CSV fallback | 4 |
+| Reports: P&L, balance sheet, trial balance, cash flow, AR aging, general ledger | Build | 4 |
+| Property-level tracking (class/location) | Build; every line tagged `property_id` | 3 |
+| Rent roll, occupancy, deposit liability report | Build (not in Zoho Books by default) | 3 |
+| 1099 vendor tracking | Build | 4 |
+| Multi-currency, inventory, timesheets, purchase orders | Not building | n/a |
+| Retainer invoices (retention) | Not building | n/a |
+
+**Ledger rules (Analysis):**
+
+- Every financial event writes a balanced `journal_entry` (sum of debits equals sum of credits) in one DB transaction.
+- Journal lines are never updated or deleted. Corrections are reversing entries.
+- Invoice, payment, and bill tables are subledgers that reference journal entries.
+- Security deposits post to a liability account, not income. **Verify** with your attorney whether Tenn. Code Ann. Title 66, Chapter 28 requires a separate deposit account and what notice and return timelines apply.
+- Master lease rent paid to property owners posts to expense with the master lease on a separate contract record from resident subleases (matches your commercial vs residential separation rule).
+- Third-party payers (vouchers, case manager agencies) are payers on a payment, not owners of the tenancy balance.
+
+## 6. Portal design
+
+### Roles
+
+| Role | Can see | Can do |
+|---|---|---|
+| Tenant | Own balance, invoices, payment history, lease, documents shared with them, own maintenance requests | Pay (card, ACH), set autopay, download documents, submit and comment on maintenance requests, update contact info |
+| Case manager | Only for tenants who granted access: balance due, payment status, due dates, and documents the tenant chose to share | Make a payment on the tenant's behalf, upload voucher or agency payment documents, message Gladewood |
+| Staff | Everything per role | Full CRM and Books |
+
+### Access grants (Analysis)
+
+A `portal_access_grants` table controls case manager visibility: `tenancy_id`, `case_manager_user_id`, `scope` (`balance`, `payments`, `documents`), `granted_by_tenant_at`, `expires_at`, `revoked_at`. Every portal query joins this table. Default is no access. Tenants can revoke in the portal. Every read of a grant-scoped record writes to the audit log.
+
+### Fair Housing and ADA boundary (Analysis)
+
+- Gladewood provides independent shared housing. It does not provide medical care, medication administration, personal care, or supervision.
+- **No** diagnosis, medication, psychiatric, disability, or clinical fields in any table, form, or portal screen.
+- Maintenance requests have a free-text description. Add an inline notice: "Do not include health information." Staff can redact.
+- A reasonable accommodation request is a separate, staff-only workflow. **Verify** its handling with your attorney.
+- Replace the free-text `notes` columns on `residents` and `prospects` with structured fields plus a short operational note field, and apply the same notice.
+- Examples, demos, and training data use "Resident A" placeholders. No real resident data, occupancy numbers, or addresses in mockups.
+
+### Portal features by phase
+
+- **Phase 2:** login, profile, document list, maintenance request submit/track.
+- **Phase 3:** balances, invoices, pay now, autopay, receipts, case manager role and grants.
+- **Phase 4:** payment plans, statements export, e-sign of lease addenda.
+
+## 7. Core data model (first cut)
+
+**Core/auth:** `users`, `roles`, `user_roles`, `audit_log`
+**CRM:** `contacts`, `companies`, `pipelines`, `pipeline_stages`, `deals`, `activities`, `notes`, `tags`, `custom_field_defs`, `workflow_rules`, `email_messages`, `email_templates`
+**Housing:** `properties`, `rooms`, `master_leases`, `tenancies`, `deposits`, `documents`, `maintenance_requests`, `maintenance_comments`, `portal_access_grants`
+**Books:** `accounts`, `journal_entries`, `journal_lines`, `invoices`, `invoice_lines`, `recurring_invoice_profiles`, `payments`, `payment_allocations`, `vendors`, `bills`, `bill_lines`, `expenses`, `bank_accounts`, `bank_transactions`, `reconciliations`, `period_locks`
+
+**Migration of existing data (Analysis):** `properties` maps to `properties`; `prospects` become `contacts` + `deals` in the inquiry pipeline; `residents` become `contacts` + `tenancies`; `conflict_log` becomes `activities` of type incident, staff-only; `financials` key/values move into a planning table, separate from the ledger. Text money and date columns are parsed and validated during migration with a rejection report for bad values.
+
+## 8. Security and compliance checklist
+
+- Replace `allow_origins=["*"]` with an explicit allowlist (staff and portal origins).
+- All endpoints require a verified JWT except `/api/health` and public web forms (rate limited, captcha).
+- Authorization in the service layer, plus Postgres row-level security as a second layer for portal tables.
+- Secrets only in Render environment variables. Never log DSNs or tokens (the current masking code is a good pattern to keep).
+- Encrypt sensitive columns (bank account tokens, government ID if ever collected). Store Stripe and Plaid tokens, never raw account numbers.
+- Stripe webhooks: verify signature, store event ID, process once.
+- Backups and point-in-time recovery enabled on Supabase; restore drill before go-live.
+- Audit log is append-only and covers logins, grant changes, document access, ledger postings, period locks.
+- Tenant screening data (credit, background) follows FCRA adverse action rules. **Verify** with your attorney before storing screening reports.
+- Background-check and criminal-history screening criteria follow HUD guidance and Fair Housing Act. **Verify** policy with your attorney.
+
+## 9. Phased delivery
+
+| Phase | Scope | Exit criteria |
+|---|---|---|
+| **0. Foundation** | Split `api_server.py` into modules; Alembic; Supabase Auth; roles; audit log; CORS allowlist; CI with tests; staging environment | Every existing endpoint works behind auth; tests pass; no wildcard CORS |
+| **1. CRM core** | Contacts, companies, pipelines, deals, activities, notes, tags, custom fields, views, import/export, timeline | Existing prospect and property data migrated; pipelines usable daily |
+| **2. CRM automation + portal v1** | Workflows, email, forms, dashboards; portal login, documents, maintenance requests | A test tenant submits a maintenance request that appears as a staff task |
+| **3. Books core + portal payments** | Chart of accounts, journal, invoices, recurring rent, payments (Stripe), deposits, rent roll, AR aging, case manager role | A test tenant pays rent online and the ledger balances; trial balance equals zero difference |
+| **4. Books full** | Bills, expenses, bank feeds, reconciliation, P&L, balance sheet, cash flow, 1099 | One month closed and locked; reconciliation ties to the bank statement |
+| **5. Integrations** | E-sign, Twilio, Google Calendar sync, accounting export | As prioritized |
+
+**Rough effort (Assumption, one full-time engineer):** Phase 0 about 2 weeks, Phase 1 about 4, Phase 2 about 4, Phase 3 about 6, Phase 4 about 6. Treat as an estimate to refine, not a quote.
+
+## 10. Decisions needed from Paul
+
+1. **Stack:** Confirm FastAPI + Postgres + React/Next.js, or name a different front end.
+2. **Payments:** Stripe for card and ACH? Do any residents pay through housing authority or agency checks that need manual posting?
+3. **Bank feeds:** Plaid in Phase 4, or CSV import only at first?
+4. **Accounting handoff:** Will your CPA need QuickBooks or Zoho Books export, or will this ledger be the book of record?
+5. **Case manager scope:** Confirm access is limited to balance, payment status, and documents the tenant chooses to share, with written tenant authorization on file.
+6. **Phase order:** Confirm Phase 0 starts now, and which CRM pipelines matter most in Phase 1.
+7. **Attorney review:** Schedule review of deposit handling, late fees, case manager authorization form, and screening policy before Phase 3.
+
+## 11. Open risks
+
+| Risk | Severity | Mitigation | Review cadence |
+|---|---|---|---|
+| Scope creep toward "identical to Bigin" | High | Parity map in Section 4 is the contract; changes go through Paul | Each phase |
+| Ledger errors | High | Double-entry constraint, reversal-only corrections, test suite on posting rules, CPA review of chart and reports | Each phase, monthly after launch |
+| Portal data exposure | High | Access grants, RLS, audit log, penetration test before Phase 3 | Before launch, then quarterly |
+| Fair Housing or ADA exposure from stored data | High | No clinical fields, form notices, attorney review | Each schema change |
+| Payment disputes and ACH returns | Medium | Webhook reconciliation, return handling posts reversing entries | Monthly |
+| Single-engineer bus factor | Medium | Docs, tests, migrations in repo | Quarterly |
+
+Voice check: 37/40
