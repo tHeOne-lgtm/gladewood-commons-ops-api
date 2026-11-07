@@ -25,7 +25,7 @@ Add `http://localhost:8000` to `CORS_ORIGINS` only on a local `.env`, never on R
 Run `python3 tools/command_center_patch.py <original site folder> <output folder> <path to supabase-js UMD bundle>`. The bundle is `dist/umd/supabase.js` from the `@supabase/supabase-js` npm package (2.119.0 was used). The script copies the site, then:
 
 1. Inserts a first `<script>` in `<head>` that sets `window.GW_SB_URL` and captures the sign-in fragment (`#access_token=...`) the magic link returns, before the page's hash router can erase it, and points the router at the Data view.
-2. Serves supabase-js from the site itself (`supabase.js`), so the existing `script-src 'self'` policy is unchanged.
+2. Inlines supabase-js into `index.html` (the page already allows inline scripts), so the site stays a single self-contained file and a deploy that uploads only `index.html` still works.
 3. Replaces `api()` so every call carries `Authorization: Bearer <token>` and reports 401 and 403 in plain words.
 4. Adds three fields to the Gladewood sync card: Supabase publishable key, Staff email, and the sign-in and sign-out buttons with a status line. The key is stored under its own `localStorage` key (`gw-sb-key.v1`) because the page's state loader drops unknown settings.
 5. Hands the captured token to supabase-js with `setSession()` (URL detection is turned off), so sign-in does not depend on the URL surviving the router.

@@ -7,7 +7,7 @@ if os.path.exists(out): shutil.rmtree(out)
 os.makedirs(out)
 for f in ("index.html", "_headers", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "manifest.webmanifest", "robots.txt"):
     shutil.copy(os.path.join(src, f), out)
-shutil.copy(lib, os.path.join(out, "supabase.js"))
+LIB_JS = open(lib, encoding="utf-8").read()
 p = os.path.join(out, "index.html"); t = open(p, encoding="utf-8").read()
 
 def rep(old, new):
@@ -17,8 +17,9 @@ def rep(old, new):
 
 # 1. first script: Supabase URL plus capture of the sign-in fragment before the hash router can erase it
 rep("<head>", '<head>\n<script>window.GW_SB_URL="%s";(function(){var h=location.hash||"";if(/access_token=|refresh_token=|error_description=|type=magiclink/.test(h)){window.__gwAuthHash=h;try{history.replaceState(null,"",location.pathname+location.search+"#data")}catch(e){}}})();</script>' % SB_URL)
-# 2. library, served from the site itself (script-src stays 'self')
-rep("</head>", '<script src="supabase.js"></script>\n</head>')
+# 2. library inlined into the page, so a single-file deploy still works (script-src 'unsafe-inline' already allowed)
+assert "</script>" not in LIB_JS
+rep("</head>", "<script>\n" + LIB_JS + "\n</script>\n</head>")
 # 3. api() with bearer token, plus sign-in helpers
 a = t.index("function api(path,opt){"); b = t.index("return r.status===204?null:r.json()})}", a) + len("return r.status===204?null:r.json()})}")
 t = t[:a] + r"""var sbClient=null;
