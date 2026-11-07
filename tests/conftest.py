@@ -26,10 +26,13 @@ def engine():
         eng = create_engine(url, pool_pre_ping=True)
     else:
         eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    Base.metadata.drop_all(eng)
-    Base.metadata.create_all(eng)
+    manage_schema = not os.environ.get("TEST_SKIP_CREATE_ALL")
+    if manage_schema:
+        Base.metadata.drop_all(eng)
+        Base.metadata.create_all(eng)
     yield eng
-    Base.metadata.drop_all(eng)
+    if manage_schema:
+        Base.metadata.drop_all(eng)
     eng.dispose()
 
 
@@ -106,3 +109,13 @@ def staff_headers(staff_user):
 @pytest.fixture
 def pending_headers():
     return auth(make_token(str(uuid.uuid4()), "nobody@example.com"))
+
+
+@pytest.fixture
+def pipelines(db):
+    from app.seed import seed_default_pipelines
+    seed_default_pipelines(db)
+    db.commit()
+    from app.models import Pipeline
+    from sqlalchemy import select
+    return {p.slug: p for p in db.scalars(select(Pipeline)).all()}

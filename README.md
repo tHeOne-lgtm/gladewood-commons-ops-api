@@ -17,6 +17,12 @@ app/
   schemas.py     Pydantic request and response models
   crud.py        generic staff-only CRUD router factory (audited, paginated)
   routers/       health, users, records (properties, prospects, residents, conflict log), financials, demand
+  routers/crm/   companies, contacts, pipelines, deals, activities, notes, timeline
+  schemas_crm.py CRM request and response models
+  crm_common.py  tags, CSV import and export, snapshot and diff helpers
+  seed.py        default Gladewood pipelines (property, resident inquiry, referral partner)
+  legacy_migration.py  dry-run migration of prospects, residents, properties into the CRM
+  cli.py         python -m app.cli migrate-legacy | seed-pipelines
 alembic/         migrations (run `alembic upgrade head`)
 tests/           pytest suite (SQLite by default, Postgres when TEST_DATABASE_URL is set)
 api_server.py    compatibility entry point; imports app.main:app
@@ -65,6 +71,31 @@ python -m pip_audit -r requirements.txt
 ```
 
 Set `TEST_DATABASE_URL=postgresql+psycopg://...` to run the suite against Postgres. CI runs both, and also applies, rolls back, and re-applies the migrations against Postgres 16.
+
+## CRM module (Phase 1)
+
+All routes require `admin` or `staff`. Every write is audited; `GET /api/timeline?entity=deal&entity_id=5` merges audit entries, notes, activities, and stage moves for one record.
+
+| Resource | Routes | Notes |
+|---|---|---|
+| Companies | `/api/companies`, `/export`, `/import` | Kinds: property_owner, brokerage, agency, hospital, employer, vendor, other |
+| Contacts | `/api/contacts`, `/{id}/tags`, `/duplicates`, `/export`, `/import` | Filters: `q`, `kind`, `status` (`active`, `archived`, `all`), `company_id`, `tag`. Duplicates by email, phone, or name |
+| Pipelines | `/api/pipelines`, `/{id}/summary` | Create and edit need `admin`; a stage holding deals cannot be removed |
+| Deals | `/api/deals`, `/{id}/move`, `/export` | A move into a won or lost stage closes the deal; stage history is kept |
+| Activities | `/api/activities`, `/{id}/complete`, `/export` | Kinds: task, event, call. Filters: `mine`, `overdue`, `due_before`, `open_only` |
+| Notes | `/api/notes?entity=&entity_id=` | Only the author or an admin can edit or delete |
+
+Every CRM record accepts `extra`, a flat JSON object of up to 30 snake_case keys, for fields that do not deserve a column yet. Resident and prospect records use initials as `display_name`; keep health, disability, and clinical details out of every field.
+
+### Migrating the legacy tables into the CRM
+
+```
+python -m app.cli migrate-legacy            # dry run: prints scanned counts and every rejected row
+python -m app.cli migrate-legacy --apply    # writes only when there are zero rejections
+python -m app.cli migrate-legacy --apply --allow-partial --actor <your user id>
+```
+
+Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline; residents become `resident` contacts; properties become deals in the Property pipeline linked by `property_id`. Money and date text is parsed and unparseable values are rejected. Re-running skips rows already migrated (`legacy_ref`). The legacy tables are left in place.
 
 ## Migrations
 

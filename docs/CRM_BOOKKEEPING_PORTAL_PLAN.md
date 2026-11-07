@@ -12,6 +12,7 @@ Evidence labels: **Source fact** (verified from a retrieved page or this repo), 
 |---|---|---|
 | 2026-11-07 | Books module is an **accounts receivable subledger in this system plus a sync to Zoho Books**, not a full general ledger. Zoho Books is the book of record for the chart of accounts, bills, banking, reconciliation, and financial statements. | Section 5 rows marked "Build" for chart of accounts, journals, period locking, bills, expenses, banking, reconciliation, and financial statements change to "Zoho Books via sync". This system keeps tenancies, invoices, payments, deposits, rent roll, AR aging, and the portal, and pushes customers, invoices, and payments to Zoho Books. Phase 4 shrinks to the sync and its reconciliation report. |
 | 2026-11-07 | Phase 0 starts. | See `docs/PLAN_ASSESSMENT.md` Section 6 for the added Phase 0 items. |
+| 2026-11-07 | Phase 0 complete in code; Phase 1 (CRM core) built. | Custom fields are typed columns plus a bounded `extra` JSON object, not a field registry (per assessment Section 3.2). Saved custom views deferred; list filters cover the Phase 1 need. Workflows, email, forms, and dashboards remain Phase 2. Legacy tables are migrated by `python -m app.cli migrate-legacy` with a dry-run rejection report and are not dropped. |
 
 ## 1. Decision summary
 
