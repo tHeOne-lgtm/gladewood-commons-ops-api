@@ -97,7 +97,7 @@ Add these to the Phase 0 scope in the plan (Analysis):
 2. Pin dependencies and add a lock file (D6).
 3. Add `pytest` with a test database, and a CI workflow that runs tests, `pyflakes`, `bandit`, and `pip-audit` (D7).
 4. Add `render.yaml` (D7).
-5. Rotate the Supabase database password and restrict network access (D10).
+5. Rotate the Supabase database password and restrict network access (D10). Backups: see Section 10 (daily backups plus nightly `pg_dump`, not PITR).
 6. Apply for Stripe ACH approval so Phase 3 is not blocked.
 7. Locate the existing dashboard front end, record its stack and location in the README, and decide whether it becomes the staff app or is replaced.
 
@@ -136,5 +136,44 @@ Measure each phase against these, and stop the phase if the gate fails (Analysis
 3. Weekly hours you can commit, so the phase calendar is honest.
 4. Approval to rotate the Supabase database password during Phase 0.
 5. Approval to apply for Stripe ACH during Phase 0.
+
+## 10. Hosting cost comparison: Render plus Supabase
+
+Added 2026-11-07 after Paul asked whether two vendors are justified. Decision: keep both.
+
+**Why two vendors (Analysis):** Render runs Python but has no hosted login. Supabase has login, Postgres, and file storage but runs only TypeScript Edge Functions. The plan needs Python compute and a login system for tenants and case managers, so one of the two would have to be replaced by hand-built auth or a full rewrite.
+
+Prices are **Source facts** from render.com/pricing and supabase.com/pricing, fetched 2026-11-07. "Not captured" means the page extraction did not return the value; check it in the dashboard before relying on it.
+
+| Item | Render | Supabase |
+|---|---|---|
+| Workspace or plan | Hobby $0; Professional $25 per user | Free $0; Pro $25 per month |
+| Compute for the API | Starter web service $7 (512 MB RAM, 0.5 CPU); Standard $25 (2 GB, 1 CPU) | Not applicable (no Python) |
+| Postgres | Basic $6 (256 MB RAM) or $19 (1 GB RAM); storage per tier not captured | Free: 500 MB database; Pro: 8 GB included, then $0.125 per GB |
+| Auth | None built in | Included: 50,000 MAU on Free, 100,000 on Pro |
+| File storage (portal documents) | Persistent disk $0.25 per GB | Free: 1 GB; Pro: 100 GB included, then $0.0213 per GB |
+| Bandwidth | 5 GB included, $0.15 per GB after | Free: 5 GB; Pro: 250 GB, then $0.09 per GB |
+| Backups | Not captured for Postgres tiers | Free: none; Pro: daily backups included |
+| Point-in-time recovery | Not captured | $100 per month add-on |
+| Advanced MFA add-on | Not applicable | $75 per month for the first project (Assumption: app-based TOTP MFA is included without the add-on; verify) |
+| Free tier catch | Free web service exists but was not evaluated for production | Free projects pause after 1 week of inactivity; 2 free projects allowed |
+| Cron | $0.00016 per run | pg_cron included (stable general knowledge, not on the pricing page) |
+| Spend cap | Not captured | On by default on Pro |
+
+**Monthly cost of each architecture at this app's scale (Analysis)**
+
+| Option | What you pay | Monthly | What it costs in work |
+|---|---|---|---|
+| Keep both, production grade (chosen) | Render Starter $7 + Supabase Pro $25 | $32 | None now |
+| Keep both, Supabase on Free | Render Starter $7 + Supabase Free $0 | $7 | No daily backups; project pauses after 7 idle days. Acceptable for build and test only |
+| Render only | Render Starter $7 + Render Postgres Basic $6 to $19 | $13 to $26 | Build and maintain login in-house, or add a third auth vendor (not priced here) |
+| Supabase only | Supabase Pro $25 | $25 | Rewrite the API as TypeScript Edge Functions; discard the Phase 0 Python and tests |
+
+**Conclusions**
+
+- The two-vendor premium over Supabase-only is $7 per month. Over Render-only it is $6 to $19, and that saving would buy hand-built authentication, which Section 5 argues against.
+- The largest cost lever is point-in-time recovery at $100 per month. Section 6 item 4 and Section 8 asked for PITR and a restore drill. **Amended:** use Supabase Pro's included daily backups plus a nightly `pg_dump` to a private storage bucket, and run the restore drill against that dump. Revisit PITR when the portal holds payment data.
+- Stay on Supabase Free while building. Move to Pro on the day real resident balances are entered; that is when backups stop being optional.
+- Values to confirm in the dashboards: Render Postgres storage and backup policy per tier; whether Supabase Pro still includes a compute credit (Assumption: it has in the past).
 
 Voice check: 37/40

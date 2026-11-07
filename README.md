@@ -77,6 +77,6 @@ These cannot be done from the repository.
 1. Rotate the Supabase database password (Supabase dashboard, Project Settings, Database) and update `DATABASE_URL` in Render. The old string was hand-copied at least once.
 2. Set `CORS_ORIGINS` in Render to the dashboard's origin. Until it is set, browsers cannot call the API.
 3. Set `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`) and `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com` in Render, deploy, sign in once, then remove `BOOTSTRAP_ADMIN_EMAILS`.
-4. Enable point-in-time recovery on Supabase and run one restore drill.
+4. Turn on Supabase daily backups (Pro plan) and a nightly `pg_dump` to a private bucket, then run one restore drill from the dump. PITR deferred; see `docs/PLAN_ASSESSMENT.md` Section 10.
 5. Apply for Stripe ACH Direct Debit so Phase 3 is not blocked.
 6. Dashboard: `https://psgccommandcenter.live` (Netlify, single static HTML file, source on Paul's Mac). Set `CORS_ORIGINS=https://psgccommandcenter.live`. Apply the patch in `docs/DASHBOARD_INTEGRATION.md` so the page sends the Supabase access token on every request.
