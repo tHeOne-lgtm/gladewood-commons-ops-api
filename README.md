@@ -79,4 +79,4 @@ These cannot be done from the repository.
 3. Set `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`) and `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com` in Render, deploy, sign in once, then remove `BOOTSTRAP_ADMIN_EMAILS`.
 4. Enable point-in-time recovery on Supabase and run one restore drill.
 5. Apply for Stripe ACH Direct Debit so Phase 3 is not blocked.
-6. Record where the dashboard front end lives and what it is built with; it must send the Supabase access token on every request.
+6. Dashboard: `https://psgccommandcenter.live` (Netlify, single static HTML file, source on Paul's Mac). Set `CORS_ORIGINS=https://psgccommandcenter.live`. Apply the patch in `docs/DASHBOARD_INTEGRATION.md` so the page sends the Supabase access token on every request.
