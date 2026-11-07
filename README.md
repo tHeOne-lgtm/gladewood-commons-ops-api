@@ -103,11 +103,34 @@ Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline
 
 ## Phase 0 steps that need Paul
 
-These cannot be done from the repository.
+Verified against the Supabase, Render, and Netlify documentation on 2026-11-07. Direct links use `_`, which the Supabase dashboard resolves to the current project.
 
-1. Rotate the Supabase database password (Supabase dashboard, Project Settings, Database) and update `DATABASE_URL` in Render. The old string was hand-copied at least once.
-2. Set `CORS_ORIGINS` in Render to the dashboard's origin. Until it is set, browsers cannot call the API.
-3. Set `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`) and `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com` in Render, deploy, sign in once, then remove `BOOTSTRAP_ADMIN_EMAILS`.
-4. Turn on Supabase daily backups (Pro plan) and a nightly `pg_dump` to a private bucket, then run one restore drill from the dump. PITR deferred; see `docs/PLAN_ASSESSMENT.md` Section 10.
-5. Apply for Stripe ACH Direct Debit so Phase 3 is not blocked.
-6. Dashboard: `https://psgccommandcenter.live` (Netlify, single static HTML file, source on Paul's Mac). Set `CORS_ORIGINS=https://psgccommandcenter.live`. Apply the patch in `docs/DASHBOARD_INTEGRATION.md` so the page sends the Supabase access token on every request.
+**Supabase**
+
+1. Reset the database password: https://supabase.com/dashboard/project/_/database/settings (Database password, Reset). The old string was hand-copied at least once.
+2. Get the connection string: click **Connect** in the top bar and choose **Session pooler** (port 5432). The direct connection is IPv6 by default and Render needs IPv4; the transaction pooler (port 6543) is for serverless. Paste the new password into the string.
+3. Network restrictions (same Database Settings page): allow only Render's outbound IPs, found on the Render service under Settings, Outbound IP addresses. Needs Owner or Admin on the org.
+4. Auth URLs: https://supabase.com/dashboard/project/_/auth/url-configuration. Site URL `https://psgccommandcenter.live`; add Redirect URL `https://psgccommandcenter.live/**`.
+5. Browser key for the Command Center patch: https://supabase.com/dashboard/project/_/settings/api-keys. Use the **publishable** key (`sb_publishable_...`); `anon` is the legacy name. Never a `sb_secret_` or `service_role` key.
+6. JWT mode: https://supabase.com/dashboard/project/_/settings/jwt. If a current signing key is listed (ES256, RS256, or EdDSA), set only `SUPABASE_URL` on Render. If the project still uses the legacy HS256 secret, either click **Migrate JWT secret** then **Rotate keys**, or set `SUPABASE_JWT_SECRET` on Render.
+7. Project URL is `https://<Project ID>.supabase.co`; the Project ID is on Project Settings, General.
+8. Backups: https://supabase.com/dashboard/project/_/database/backups/scheduled. Daily backups with 7 day retention are on Pro and above; Free has none. Add a nightly `pg_dump` to a private bucket and run one restore drill from it. PITR deferred (see `docs/PLAN_ASSESSMENT.md` Section 10).
+
+**Render**
+
+1. Service, **Environment** (left pane), **+ Add Environment Variable**: `DATABASE_URL`, `CORS_ORIGINS=https://psgccommandcenter.live`, `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`), `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com`, `ENV=production`. Choose **Save only** until the code is merged.
+2. Service, **Settings**: Build Command `pip install -r requirements.txt`; Start Command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`; Health Check Path `/api/health`; Auto-Deploy **On Commit** or **After CI Checks Pass**; branch `master`.
+3. Migrations: the **Pre-Deploy Command** `alembic upgrade head` is available only on paid instance types. On a Free instance, use this Start Command instead: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+4. After the first sign-in, remove `BOOTSTRAP_ADMIN_EMAILS` and choose **Save and deploy**.
+
+**Netlify (Command Center)**
+
+1. The site's security policy lives in `_headers` in the publish directory or in `netlify.toml` under `[[headers]]`. Add the Render API origin and `https://<Project ID>.supabase.co` to `connect-src`, and `https://cdn.jsdelivr.net` to `script-src`.
+2. Apply the patch in `docs/DASHBOARD_INTEGRATION.md` and redeploy the site the same way as before.
+
+**Then**
+
+1. Merge PR #1. Check `https://<service>.onrender.com/api/health` returns `{"ok":true,"db":true}`.
+2. Sign in from the Command Center with the magic link; Test should report Connected and Pull should load rows.
+3. Run `python -m app.cli migrate-legacy` locally with the new `DATABASE_URL` in `.env`, review the rejections, then `--apply`.
+4. Apply for Stripe ACH so Phase 3 is not blocked.

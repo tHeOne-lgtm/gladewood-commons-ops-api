@@ -9,16 +9,16 @@
 | Variable | Value |
 |---|---|
 | `CORS_ORIGINS` | `https://psgccommandcenter.live` |
-| `SUPABASE_URL` | the project URL from Supabase, Project Settings, API |
+| `SUPABASE_URL` | `https://<Project ID>.supabase.co`; Project ID is on Project Settings, General |
 | `BOOTSTRAP_ADMIN_EMAILS` | `paulselman@gladewoodcommons.com` (remove after first sign-in) |
 
 Add `http://localhost:8000` to `CORS_ORIGINS` only on a local `.env`, never on Render.
 
 ## 2. Supabase Auth settings (Paul)
 
-- Authentication, URL Configuration: Site URL `https://psgccommandcenter.live`; add the same value to Redirect URLs.
-- Authentication, Providers: Email enabled. Magic link (no password) is enough for a one-person staff login and avoids storing a password in the page.
-- Copy the project URL and the `anon` public key. The `anon` key is safe to ship in the page; the `service_role` key never is.
+- https://supabase.com/dashboard/project/_/auth/url-configuration: Site URL `https://psgccommandcenter.live`; Redirect URL `https://psgccommandcenter.live/**`.
+- Authentication, Sign In / Providers: Email enabled. Magic link (no password) is enough for a one-person staff login and avoids storing a password in the page.
+- https://supabase.com/dashboard/project/_/settings/api-keys: copy the **publishable** key (`sb_publishable_...`; `anon` on older projects). It is safe to ship in the page. A `sb_secret_` or `service_role` key never is.
 
 ## 3. Patch for the Command Center HTML (Analysis: drop-in replacement)
 
@@ -32,7 +32,7 @@ Add `http://localhost:8000` to `CORS_ORIGINS` only on a local `.env`, never on R
 
 ```js
 var SB_URL = 'https://YOUR-PROJECT.supabase.co';   // Supabase > Project Settings > API
-var SB_ANON = 'YOUR-ANON-PUBLIC-KEY';               // anon key only; never service_role
+var SB_ANON = 'sb_publishable_...';                 // publishable (or legacy anon) key only; never a secret key
 var sb = window.supabase.createClient(SB_URL, SB_ANON);
 
 function token(){
@@ -92,7 +92,7 @@ sb.auth.onAuthStateChange(function(){
 
 The existing Test, Pull, and Push buttons need no change; they already go through `api()`.
 
-**3d. Content Security Policy.** The page shows "Allowed by the site security policy: hook.us2.make.com", so a CSP exists outside the HTML (Netlify `_headers` or `netlify.toml`). Add to `connect-src`: the Render API origin and `https://YOUR-PROJECT.supabase.co`. Add to `script-src`: `https://cdn.jsdelivr.net`. Without this the browser blocks the calls before they leave the page.
+**3d. Content Security Policy.** The page shows "Allowed by the site security policy: hook.us2.make.com", so a CSP exists outside the HTML: Netlify reads it from a `_headers` file in the publish directory or from `[[headers]]` in `netlify.toml`. Add to `connect-src`: the Render API origin and `https://YOUR-PROJECT.supabase.co`. Add to `script-src`: `https://cdn.jsdelivr.net`. Without this the browser blocks the calls before they leave the page.
 
 ## 4. First sign-in sequence
 

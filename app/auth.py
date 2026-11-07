@@ -41,7 +41,7 @@ def decode_token(token: str, settings: Settings) -> dict:
         return jwt.decode(
             token,
             signing_key,
-            algorithms=["ES256", "RS256"],
+            algorithms=["ES256", "RS256", "EdDSA"],
             audience=settings.jwt_audience,
         )
     raise RuntimeError("Authentication is not configured: set SUPABASE_JWT_SECRET or SUPABASE_URL")
