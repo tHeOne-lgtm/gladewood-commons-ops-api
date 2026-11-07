@@ -1,10 +1,17 @@
 # Gladewood Custom CRM, Bookkeeping, and Tenant/Case Manager Portal
 
-**Status:** Proposed architecture and phased plan. No application code changed.
+**Status:** Approved with amendments on 2026-11-07. Phase 0 in progress.
 **Owner:** Paul Selman, Gladewood Commons, LLC
 **Disclaimer:** This plan is engineering guidance. It is not legal advice (not an attorney) and not accounting advice (not a CPA). Items marked "Verify" need review by your Tennessee landlord/tenant attorney or CPA before launch.
 
 Evidence labels: **Source fact** (verified from a retrieved page or this repo), **Analysis** (my reasoning), **Assumption** (needs your confirmation).
+
+## 0. Decision log
+
+| Date | Decision | Effect on this plan |
+|---|---|---|
+| 2026-11-07 | Books module is an **accounts receivable subledger in this system plus a sync to Zoho Books**, not a full general ledger. Zoho Books is the book of record for the chart of accounts, bills, banking, reconciliation, and financial statements. | Section 5 rows marked "Build" for chart of accounts, journals, period locking, bills, expenses, banking, reconciliation, and financial statements change to "Zoho Books via sync". This system keeps tenancies, invoices, payments, deposits, rent roll, AR aging, and the portal, and pushes customers, invoices, and payments to Zoho Books. Phase 4 shrinks to the sync and its reconciliation report. |
+| 2026-11-07 | Phase 0 starts. | See `docs/PLAN_ASSESSMENT.md` Section 6 for the added Phase 0 items. |
 
 ## 1. Decision summary
 
@@ -94,6 +101,8 @@ The portal never queries CRM or Books tables directly. It calls `portal/` servic
 **Gladewood-specific pipelines (Analysis):** Property/landlord (existing), Resident inquiry to move-in (replaces `prospects`), Referral partner/case manager outreach, Maintenance.
 
 ## 5. Books module: Zoho Books parity map
+
+**Amended 2026-11-07 (see Decision log):** rows below marked "Build" for general ledger functions are superseded. This system builds only the AR subledger (tenancies, invoices, recurring rent, payments, deposits, rent roll, AR aging) and a one-way sync of customers, invoices, and payments into Zoho Books through its API. Zoho Books owns the chart of accounts, journals, bills, banking, reconciliation, period locks, and statements. The ledger rules at the end of this section still apply to the subledger: every invoice and payment is immutable once synced, and corrections are credit notes or reversing payments.
 
 **Source fact (zoho.com/books features and help index, retrieved 2026-11-07):** Zoho Books covers chart of accounts, manual and recurring journals, base currency adjustments, transaction locking, customers and vendors, invoices, recurring invoices, payments received, retainer invoices, payment links, bills, vendor credits, expenses, purchase orders, banking with feeds and transaction rules, reconciliation, customer and vendor portals, reminders, timesheets, taxes, multi-currency, reports, and API.
 
