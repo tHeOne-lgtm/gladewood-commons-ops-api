@@ -90,12 +90,30 @@ Have ready: a password manager window, a blank text file outside any repo for pa
    - `SUPABASE_URL` = the URL from A7
    - `BOOTSTRAP_ADMIN_EMAILS` = `paulselman@gladewoodcommons.com`
    - `ENV` = `production`
+   - `PYTHON_VERSION` = `3.12.8` (Render otherwise picks a newer interpreter than CI tests; the deploy log showed Python 3.14)
    If `DATABASE_URL` already exists, click its pencil icon and replace the value instead of adding a second one.
 4. Only if A6 showed a legacy secret and you did not rotate: add `SUPABASE_JWT_SECRET` = that secret.
 5. Click the arrow next to the **Save** button and choose **Save only**. (Deploying now would run new code against old settings.)
-6. Check: the five rows are listed with values masked.
+6. Check: the six rows are listed with values masked.
 
-### B2. Build, start, and health settings
+## C. Merge the pull request, deploy, then finish Render settings
+
+### C1. Merge and first deploy
+
+1. Open https://github.com/tHeOne-lgtm/gladewood-commons-ops-api/pull/1.
+2. Scroll to the bottom. Click **Ready for review**.
+3. Click **Merge pull request**, then **Confirm merge**.
+4. Back in Render, open the service and click **Events** (or **Deploys**). A new deploy starts within a minute. The existing start command `python api_server.py` still works with the new code because `api_server.py` was kept as a shim, so this deploy succeeds before any Settings change.
+5. Click the deploy row, then **Logs**. You are looking for `Application startup complete`. The migration lines (`Running upgrade  -> 0001`, `0001 -> 0002`) appear after C2 sets the migration command, or now if you set `PYTHON_VERSION` and the start command in B1.
+6. In a browser tab, open `https://<your-service>.onrender.com/api/health`. Expect `{"ok":true,"db":true}`.
+7. Open `https://<your-service>.onrender.com/api/properties`. Expect a small JSON body with "Missing bearer token". That 401 is correct.
+8. If health shows `"db":false`, go to Render **Logs** and look for "Masked DSN"; it means the connection string or password is wrong. Redo A2 and B1.
+
+---
+
+### C2. Build, start, and health settings
+
+Do this only after C1 has deployed. Every change on the Settings page triggers a redeploy of whatever commit is on `master`; before the merge that commit has no `app` package and the new start command fails with `ModuleNotFoundError: No module named 'app'`.
 
 1. Service left pane: click **Settings**.
 2. Near the top, note the **Instance Type**. Free or Starter decides step 5.
@@ -109,21 +127,7 @@ Have ready: a password manager window, a blank text file outside any repo for pa
    - **Starter or higher:** **Pre-Deploy Command**: click **Edit**, set `alembic upgrade head`, **Save Changes**.
    - **Free:** the Pre-Deploy field is not available. Go back to **Start Command** and set it to `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 6. While on Settings, find **Outbound IP Addresses** and copy them into your text file; you will need them for network restrictions later (step G2).
-
----
-
-## C. Merge the pull request and deploy
-
-1. Open https://github.com/tHeOne-lgtm/gladewood-commons-ops-api/pull/1.
-2. Scroll to the bottom. Click **Ready for review**.
-3. Click **Merge pull request**, then **Confirm merge**.
-4. Back in Render, open the service and click **Events** (or **Deploys**). A new deploy starts within a minute.
-5. Click the deploy row, then **Logs**. You are looking for these lines, in order:
-   - `Running upgrade  -> 0001` and `Running upgrade 0001 -> 0002`
-   - `Application startup complete`
-6. In a browser tab, open `https://<your-service>.onrender.com/api/health`. Expect `{"ok":true,"db":true}`.
-7. Open `https://<your-service>.onrender.com/api/properties`. Expect a small JSON body with "Missing bearer token". That 401 is correct.
-8. If health shows `"db":false`, go to Render **Logs** and look for "Masked DSN"; it means the connection string or password is wrong. Redo A2 and B1.
+7. Check: the deploy triggered by these changes ends with `Application startup complete` and `/api/health` still returns `{"ok":true,"db":true}`.
 
 ---
 

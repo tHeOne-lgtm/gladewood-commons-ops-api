@@ -118,8 +118,8 @@ Verified against the Supabase, Render, and Netlify documentation on 2026-11-07. 
 
 **Render**
 
-1. Service, **Environment** (left pane), **+ Add Environment Variable**: `DATABASE_URL`, `CORS_ORIGINS=https://psgccommandcenter.live`, `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`), `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com`, `ENV=production`. Choose **Save only** until the code is merged.
-2. Service, **Settings**: Build Command `pip install -r requirements.txt`; Start Command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`; Health Check Path `/api/health`; Auto-Deploy **On Commit** or **After CI Checks Pass**; branch `master`.
+1. Service, **Environment** (left pane), **+ Add Environment Variable**: `DATABASE_URL`, `CORS_ORIGINS=https://psgccommandcenter.live`, `SUPABASE_URL` (or `SUPABASE_JWT_SECRET`), `BOOTSTRAP_ADMIN_EMAILS=paulselman@gladewoodcommons.com`, `ENV=production`, `PYTHON_VERSION=3.12.8`. Choose **Save only** until the code is merged.
+2. Merge PR #1 first; Settings changes redeploy the current `master`, and the new start command needs the `app` package. Then Service, **Settings**: Build Command `pip install -r requirements.txt`; Start Command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`; Health Check Path `/api/health`; Auto-Deploy **On Commit** or **After CI Checks Pass**; branch `master`.
 3. Migrations: the **Pre-Deploy Command** `alembic upgrade head` is available only on paid instance types. On a Free instance, use this Start Command instead: `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 4. After the first sign-in, remove `BOOTSTRAP_ADMIN_EMAILS` and choose **Save and deploy**.
 
