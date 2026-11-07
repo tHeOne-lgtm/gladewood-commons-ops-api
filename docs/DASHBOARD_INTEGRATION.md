@@ -20,85 +20,26 @@ Add `http://localhost:8000` to `CORS_ORIGINS` only on a local `.env`, never on R
 - Authentication, Sign In / Providers: Email enabled. Magic link (no password) is enough for a one-person staff login and avoids storing a password in the page.
 - https://supabase.com/dashboard/project/_/settings/api-keys: copy the **publishable** key (`sb_publishable_...`; `anon` on older projects). It is safe to ship in the page. A `sb_secret_` or `service_role` key never is.
 
-## 3. Patch for the Command Center HTML (Analysis: drop-in replacement)
+## 3. The patch (applied by `tools/command_center_patch.py`)
 
-**3a. Load supabase-js once, in `<head>`:**
+Run `python3 tools/command_center_patch.py <original site folder> <output folder> <path to supabase-js UMD bundle>`. The bundle is `dist/umd/supabase.js` from the `@supabase/supabase-js` npm package (2.119.0 was used). The script copies the site, then:
 
-```html
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-```
+1. Inserts a first `<script>` in `<head>` that sets `window.GW_SB_URL` and captures the sign-in fragment (`#access_token=...`) the magic link returns, before the page's hash router can erase it, and points the router at the Data view.
+2. Serves supabase-js from the site itself (`supabase.js`), so the existing `script-src 'self'` policy is unchanged.
+3. Replaces `api()` so every call carries `Authorization: Bearer <token>` and reports 401 and 403 in plain words.
+4. Adds three fields to the Gladewood sync card: Supabase publishable key, Staff email, and the sign-in and sign-out buttons with a status line. The key is stored under its own `localStorage` key (`gw-sb-key.v1`) because the page's state loader drops unknown settings.
+5. Hands the captured token to supabase-js with `setSession()` (URL detection is turned off), so sign-in does not depend on the URL surviving the router.
+6. Adds the API and Supabase origins to `connect-src` in `_headers`.
 
-**3b. Replace the existing `api` function in the Gladewood sync block with this:**
+Three defects found while testing in a real browser, all fixed in the script: the router erased the token fragment; the key did not persist across reloads; and the Supabase URL variable was declared after the init code that used it, which threw "supabaseUrl is required" and silently broke the sync card on a fresh load (the blank status line).
 
-```js
-var SB_URL = 'https://YOUR-PROJECT.supabase.co';   // Supabase > Project Settings > API
-var SB_ANON = 'sb_publishable_...';                 // publishable (or legacy anon) key only; never a secret key
-var sb = window.supabase.createClient(SB_URL, SB_ANON);
-
-function token(){
-  return sb.auth.getSession().then(function(r){
-    var s = r.data && r.data.session;
-    if(!s) throw new Error('Sign in to Gladewood first.');
-    return s.access_token;                           // supabase-js refreshes it automatically
-  });
-}
-
-function api(path, opt){
-  var base = S().settings.api;
-  if(!base) return Promise.reject(new Error('Set the API base URL first.'));
-  opt = opt || {};
-  return token().then(function(t){
-    opt.headers = {'Content-Type':'application/json', 'Authorization':'Bearer ' + t};
-    return fetch(base + path, opt);
-  }).then(function(r){
-    if(r.status === 401) throw new Error('Session expired. Sign in again.');
-    if(r.status === 403) throw new Error('This account has no staff role yet. Ask Paul to assign one.');
-    if(!r.ok) throw new Error(path + ' → HTTP ' + r.status);
-    return r.status === 204 ? null : r.json();
-  });
-}
-
-function gwSignIn(email){
-  return sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: location.origin } })
-    .then(function(r){ if(r.error) throw r.error; });
-}
-function gwSignOut(){ return sb.auth.signOut(); }
-function gwWhoAmI(){ return api('/api/me'); }      // returns {id, email, role}
-```
-
-**3c. Add a sign-in row to the Gladewood sync card, next to the API base URL field:**
-
-```html
-<label class="f">Staff email<input class="in" id="gwEmail" type="email" autocomplete="email"></label>
-<div class="row" style="margin-top:8px;gap:8px">
-  <button class="btn sm" id="gwSignIn">Email me a sign-in link</button>
-  <button class="btn sm" id="gwSignOut">Sign out</button>
-  <span class="small" id="gwWho"></span>
-</div>
-```
-
-```js
-$('#gwSignIn').onclick = function(){
-  var e = $('#gwEmail').value.trim(); if(!e) return;
-  gwSignIn(e).then(function(){ msg('Check your email for the sign-in link.'); })
-             .catch(function(err){ msg(err.message, 1); });
-};
-$('#gwSignOut').onclick = function(){ gwSignOut().then(function(){ $('#gwWho').textContent = ''; msg('Signed out.'); }); };
-sb.auth.onAuthStateChange(function(){
-  gwWhoAmI().then(function(u){ $('#gwWho').textContent = u.email + ' (' + u.role + ')'; })
-            .catch(function(){ $('#gwWho').textContent = ''; });
-});
-```
-
-The existing Test, Pull, and Push buttons need no change; they already go through `api()`.
-
-**3d. Content Security Policy.** The page shows "Allowed by the site security policy: hook.us2.make.com", so a CSP exists outside the HTML: Netlify reads it from a `_headers` file in the publish directory or from `[[headers]]` in `netlify.toml`. Add to `connect-src`: the Render API origin and `https://YOUR-PROJECT.supabase.co`. Add to `script-src`: `https://cdn.jsdelivr.net`. Without this the browser blocks the calls before they leave the page.
+Verified end to end in headless Chromium with Supabase and the API simulated: request link, open link in a fresh page load, status shows email and role, Test returns Connected, session persists after reload.
 
 ## 4. First sign-in sequence
 
 1. Deploy the API (Render runs `alembic upgrade head` first).
 2. Set the Render and Supabase values above.
-3. Open the Command Center, enter the API base URL, request a sign-in link, click it.
+3. Open the Command Center, Data view, Gladewood sync card: enter the API base URL and the publishable key, request a sign-in link, open it in the same browser.
 4. The first login creates your `users` row with role `admin` because the email matches `BOOTSTRAP_ADMIN_EMAILS`. Test should now say Connected and Pull should return rows.
 5. Remove `BOOTSTRAP_ADMIN_EMAILS` from Render.
 6. Any later person signs in the same way and lands as `pending`; grant `staff` with `PUT /api/users/{id}/role`.

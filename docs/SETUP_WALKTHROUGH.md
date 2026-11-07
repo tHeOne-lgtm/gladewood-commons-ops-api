@@ -148,22 +148,23 @@ Do this only after C1 has deployed. Every change on the Settings page triggers a
 4. In the `script-src` part, add a space and then `https://cdn.jsdelivr.net`.
 5. Save.
 
-### D3. Edit index.html
+### D3. Build the patched site
 
-1. Open `index.html` in VS Code (TextEdit will work but is slow on a 2.4 MB file).
-2. Press Cmd+F and search `</head>`. Place the cursor on the line before it and paste:
-   `<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>`
-3. Search `function api(path,opt)`. Select from `function api(path,opt){` through the end of that function, which is `return r.status===204?null:r.json()})}`. Delete the selection.
-4. Paste the block from `docs/DASHBOARD_INTEGRATION.md` section **3b**. Replace `https://YOUR-PROJECT.supabase.co` with the URL from A7 and `sb_publishable_...` with the key from A5.
-5. Search `id="apiUrl"`. Just after that input's closing `</label>`, paste the HTML from section **3c**.
-6. Search `$('#apiUrl').onchange`. Just after that statement ends (the `save()};`), paste the JavaScript from section **3c**.
-7. Save the file.
+Do not hand-edit `index.html`. Run the patch script from the API repo on your Mac:
+
+```
+cd ~/Documents/GitHub/gladewood-commons-ops-api
+npm pack @supabase/supabase-js@2 && tar -xzf supabase-supabase-js-*.tgz
+python3 tools/command_center_patch.py "<folder with the original index.html>" ~/Projects/cc-patched package/dist/umd/supabase.js
+```
+
+The output folder `~/Projects/cc-patched` is what you deploy. (Paul received this folder as a zip on 2026-11-07.)
 
 ### D4. Deploy to Netlify
 
 1. Go to https://app.netlify.com, open the site for `psgccommandcenter.live`.
 2. Click the **Deploys** tab.
-3. Drag the whole folder from Finder onto the area labeled **Need to update your site? Drag and drop your site output folder here**. (If you normally run `netlify deploy --prod` in Terminal, do that instead.)
+3. Drag the `cc-patched` folder from Finder onto the area labeled **Need to update your site? Drag and drop your site output folder here**. (If you normally run `netlify deploy --prod` in Terminal, do that instead.)
 4. Wait for the deploy row to read **Published**.
 
 ---
@@ -171,10 +172,10 @@ Do this only after C1 has deployed. Every change on the Settings page triggers a
 ## E. First sign-in
 
 1. Open https://psgccommandcenter.live in a browser. Press Cmd+Shift+R once to bypass cache.
-2. Go to the **Gladewood sync** card.
-3. In **API base URL**, paste `https://<your-service>.onrender.com` with no trailing slash. Click outside the field so it saves.
+2. Click **Data** in the navigation and find the **Gladewood sync** card.
+3. In **API base URL**, paste `https://gladewood-commons-ops-api.onrender.com` with no trailing slash. In **Supabase publishable key**, paste the `sb_publishable_...` key. Click outside each field so it saves.
 4. In **Staff email**, type `paulselman@gladewoodcommons.com`. Click **Email me a sign-in link**.
-5. Open the email from Supabase and click the link. It returns you to the site. The status next to the sign-in buttons should read your email and `(admin)`.
+5. Open the email from Supabase and click the link in the same browser. The site opens on the Data view and the status next to the sign-in buttons reads your email and `(admin)`. If the API was asleep, the status says so and fills in within about a minute.
 6. Click **Test**. Expect "Connected."
 7. Click **Pull**. Confirm the prompt. Existing properties, prospects, residents, and conflict entries load.
 8. If Test says "no staff role yet", the email you used does not match `BOOTSTRAP_ADMIN_EMAILS` exactly. Fix the variable in Render (B1), **Save and deploy**, sign out and in again.
