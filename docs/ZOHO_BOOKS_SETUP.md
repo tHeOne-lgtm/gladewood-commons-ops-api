@@ -131,6 +131,8 @@ This is the only technical step, and it is the one already waiting on you.
 
 - Organization profile, basis, CPA invited, chart of accounts, items, no sales tax: Steps 1 to 6.
 - Stripe connected with cards and ACH, bank added, portal on, opening balances signed off: Steps 9 to 12.
-- `tools/zoho_books_check.sh` reports 200 and 200: Step 14.
+- `tools/zoho_books_check.sh` reports 200 and 200: Step 14. DONE 2026-11-10: 200 and 200; `organization_id` 943655056, plan FREE, USD, America/New_York.
 
 Record the accounting basis, the organization id, and the date Books went live in `docs/CRM_BOOKKEEPING_PORTAL_PLAN.md`, decision log.
+
+Status 2026-11-10: organization id recorded; API check passed; refresh token saved. Basis and go-live date wait on a CPA (none engaged yet). Zoho's report basis can be changed later in Settings, Preferences, General without re-entering anything (Analysis; confirm when the CPA sets it).

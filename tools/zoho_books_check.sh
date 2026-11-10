@@ -16,11 +16,11 @@ read -r -s -p "Client ID: " CID; echo
 read -r -s -p "Client Secret: " CSEC; echo
 read -r -s -p "Grant code (from Self Client, Generate Code): " CODE; echo
 
-tok_body=$(mktemp -t zb) ; trap 'rm -f "$tok_body" "$org_body"' EXIT
+tok_body=$(mktemp -t zb) ; org_body="" ; trap 'rm -f "$tok_body" "$org_body"' EXIT
 tok_status=$(curl -s -o "$tok_body" -w '%{http_code}' -X POST "$ACCOUNTS/oauth/v2/token" \
   -d "grant_type=authorization_code" -d "client_id=$CID" -d "client_secret=$CSEC" -d "code=$CODE")
 unset CSEC CODE
-echo "Token exchange HTTP status: $tok_status"
+echo "Token exchange HTTP status: $tok_status (Zoho returns 200 even for an error; the next line tells)"
 
 ACCESS=$(python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("access_token",""))' "$tok_body")
 REFRESH=$(python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("refresh_token",""))' "$tok_body")
