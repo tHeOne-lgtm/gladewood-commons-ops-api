@@ -17,7 +17,7 @@ def test_default_pipelines_seeded(client, staff_headers, pipelines):
 def test_deal_create_move_win_and_summary(client, db, staff_headers, staff_user, pipelines):
     p = pipelines["resident-inquiry"]
     contact = client.post("/api/contacts", json={"display_name": "Resident A", "kind": "prospect"}, headers=staff_headers).json()
-    r = client.post("/api/deals", json={"title": "Inquiry: Resident A", "pipeline_id": p.id, "contact_id": contact["id"],
+    r = client.post("/api/deals", json={"title": "Inquiry: Resident A", "pipeline_id": p.id, "next_action_at": "2026-11-09", "contact_id": contact["id"],
                                         "amount": "650.00"}, headers=staff_headers)
     assert r.status_code == 201
     d = r.json()
@@ -45,14 +45,14 @@ def test_deal_create_move_win_and_summary(client, db, staff_headers, staff_user,
 
 def test_deal_lost_with_reason_and_stage_validation(client, staff_headers, pipelines):
     p, other = pipelines["property"], pipelines["referral-partner"]
-    d = client.post("/api/deals", json={"title": "123 Main", "pipeline_id": p.id}, headers=staff_headers).json()
+    d = client.post("/api/deals", json={"title": "123 Main", "pipeline_id": p.id, "next_action_at": "2026-11-09"}, headers=staff_headers).json()
     bad = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": other.stages[0].id}, headers=staff_headers)
     assert bad.status_code == 422
     r = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": _stage(p, "Passed").id, "lost_reason": "Zoning"},
                     headers=staff_headers)
     assert r.json()["status"] == "lost" and r.json()["lost_reason"] == "Zoning"
     assert client.post("/api/deals", json={"title": "x", "pipeline_id": 999}, headers=staff_headers).status_code == 404
-    assert client.post("/api/deals", json={"title": "x", "pipeline_id": p.id, "property_id": 999},
+    assert client.post("/api/deals", json={"title": "x", "pipeline_id": p.id, "next_action_at": "2026-11-09", "property_id": 999},
                        headers=staff_headers).status_code == 422
 
 
@@ -63,7 +63,7 @@ def test_admin_creates_and_edits_pipeline_stage_in_use_protected(client, admin_h
     assert r.status_code == 201
     pid = r.json()["id"]
     assert client.post("/api/pipelines", json=body, headers=admin_headers).status_code == 409
-    client.post("/api/deals", json={"title": "Plumber", "pipeline_id": pid}, headers=staff_headers)
+    client.post("/api/deals", json={"title": "Plumber", "pipeline_id": pid, "next_action_at": "2026-11-09"}, headers=staff_headers)
     r = client.put(f"/api/pipelines/{pid}", json={**body, "stages": [{"name": "Approved", "is_won": True}]},
                    headers=admin_headers)
     assert r.status_code == 409
@@ -75,6 +75,6 @@ def test_admin_creates_and_edits_pipeline_stage_in_use_protected(client, admin_h
 
 def test_deal_export_csv(client, staff_headers, pipelines):
     p = pipelines["property"]
-    client.post("/api/deals", json={"title": "45 Oak St", "pipeline_id": p.id, "amount": "1800"}, headers=staff_headers)
+    client.post("/api/deals", json={"title": "45 Oak St", "pipeline_id": p.id, "next_action_at": "2026-11-09", "amount": "1800"}, headers=staff_headers)
     r = client.get("/api/deals/export", headers=staff_headers)
     assert "45 Oak St" in r.text and "Not sourced yet" in r.text

@@ -80,6 +80,7 @@ class UserOut(BaseModel):
     role: str
     created_at: datetime
     last_seen_at: datetime
+    mfa_required: bool = False
 
 
 class RoleUpdate(BaseModel):

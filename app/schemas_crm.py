@@ -150,6 +150,7 @@ class DealIn(BaseModel):
     property_id: int | None = None
     amount: Decimal | None = Field(None, ge=0, max_digits=14, decimal_places=2)
     expected_close: date | None = None
+    next_action_at: date | None = None
     owner_id: str | None = None
     lost_reason: str = ""
     extra: dict[str, ExtraValue] = Field(default_factory=dict)
@@ -161,11 +162,13 @@ class DealOut(DealIn, _Out):
     status: str
     closed_at: datetime | None = None
     stage_name: str | None = None
+    import_batch_id: int | None = None
 
 
 class DealMove(BaseModel):
     stage_id: int
     lost_reason: str = ""
+    next_action_at: date | None = None
 
 
 class ActivityIn(BaseModel):
@@ -219,9 +222,74 @@ class ImportError_(BaseModel):
     error: str
 
 
+class ImportDuplicate(BaseModel):
+    row: int
+    reason: Literal["email", "phone", "name"]
+    value: str
+    existing_contact_id: int | None = None   # None when the match is an earlier row of the same file
+    matches_row: int | None = None
+
+
 class ImportResult(BaseModel):
+    batch_id: int | None = None
     created: int
     errors: list[ImportError_]
+    duplicates: list[ImportDuplicate] = []
+
+
+class ImportBatchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    source: str
+    entity: str
+    filename: str
+    created_at: datetime
+    created_by: str | None
+    row_count: int
+    created_count: int
+    error_count: int
+    duplicate_count: int
+    undone_at: datetime | None
+    undone_by: str | None
+
+
+class ImportUndoResult(BaseModel):
+    batch_id: int
+    deleted: dict[str, int]
+
+
+class TodayCounts(BaseModel):
+    deals_overdue: int
+    deals_due_today: int
+    activities_overdue: int
+    activities_due_today: int
+    open_deals: int
+
+
+class TodayDeal(BaseModel):
+    id: int
+    title: str
+    pipeline_id: int
+    stage_name: str | None
+    next_action_at: date | None
+    owner_id: str | None
+
+
+class TodayActivity(BaseModel):
+    id: int
+    kind: str
+    subject: str
+    due_at: datetime | None
+    deal_id: int | None
+    assigned_to: str | None
+
+
+class TodayOut(BaseModel):
+    date: date
+    mine: TodayCounts
+    all: TodayCounts
+    deals: list[TodayDeal]
+    activities: list[TodayActivity]
 
 
 class MigrationRejection(BaseModel):
@@ -234,6 +302,7 @@ class MigrationRejection(BaseModel):
 
 class MigrationReport(BaseModel):
     dry_run: bool
+    batch_id: int | None = None
     scanned: dict[str, int]
     would_create: dict[str, int]
     skipped_existing: dict[str, int]

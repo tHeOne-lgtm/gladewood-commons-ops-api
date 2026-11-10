@@ -22,7 +22,7 @@ def test_activity_lifecycle_and_filters(client, staff_headers, staff_user, pipel
 
 def test_notes_author_protection_and_timeline(client, db, admin_headers, staff_headers, pipelines):
     p = pipelines["property"]
-    deal = client.post("/api/deals", json={"title": "9 Elm", "pipeline_id": p.id}, headers=staff_headers).json()
+    deal = client.post("/api/deals", json={"title": "9 Elm", "pipeline_id": p.id, "next_action_at": "2026-11-09"}, headers=staff_headers).json()
     n = client.post("/api/notes", json={"entity": "deal", "entity_id": deal["id"], "body": "Owner open to 2 year term"},
                     headers=staff_headers)
     assert n.status_code == 201

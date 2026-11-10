@@ -7,7 +7,7 @@ Two verification modes:
 from functools import lru_cache
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -56,6 +56,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
     settings: Settings = Depends(settings_dep),
@@ -72,6 +73,7 @@ def get_current_user(
     if not sub:
         raise _unauthorized("Token has no subject")
     email = (claims.get("email") or "").lower()
+    request.state.token_aal = claims.get("aal") or "aal1"
 
     user = db.get(User, sub)
     if user is None:
@@ -88,11 +90,23 @@ def get_current_user(
     return user
 
 
+def mfa_required(request: Request, user: User, settings: Settings) -> bool:
+    """True when this staff or admin token still needs a second factor (decision 2026-11-09)."""
+    if not settings.require_staff_mfa or user.role not in STAFF_ROLES:
+        return False
+    return getattr(request.state, "token_aal", "aal1") != "aal2"
+
+
 def require_roles(*roles: str):
-    def dependency(user: User = Depends(get_current_user)) -> User:
+    def dependency(request: Request, user: User = Depends(get_current_user),
+                   settings: Settings = Depends(settings_dep)) -> User:
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="This account does not have access to this resource")
+        if mfa_required(request, user, settings):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Multi-factor authentication is required for staff accounts. "
+                                       "Complete the authenticator step and sign in again.")
         return user
     return dependency
 

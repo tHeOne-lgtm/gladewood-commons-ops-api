@@ -48,7 +48,7 @@ def test_dry_run_reports_rejections_and_writes_nothing(db):
 
 def test_apply_refuses_with_rejections_unless_partial_then_idempotent(db):
     rows = _seed_legacy(db)
-    rep = run_legacy_migration(db, apply=True)
+    rep = run_legacy_migration(db, apply=True, actor_id="u1")
     assert rep.dry_run and db.scalar(select(Contact)) is None
 
     rep = run_legacy_migration(db, apply=True, allow_partial=True, actor_id="u1")
@@ -62,7 +62,7 @@ def test_apply_refuses_with_rejections_unless_partial_then_idempotent(db):
     assert deals[2].amount == Decimal("2100.00") and deals[2].property_id == rows["pine"].id and deals[2].owner_id == "u1"
     assert all(d.status == "open" for d in deals)
 
-    again = run_legacy_migration(db, apply=True, allow_partial=True)
+    again = run_legacy_migration(db, apply=True, allow_partial=True, actor_id="u1")
     assert again.would_create == {"contacts": 0, "deals": 0}
     assert again.skipped_existing == {"contacts": 3, "deals": 3}
     assert len(db.scalars(select(Deal)).all()) == 3

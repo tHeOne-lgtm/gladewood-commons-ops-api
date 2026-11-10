@@ -106,7 +106,7 @@ class AuditLog(Base):
 from datetime import date  # noqa: E402
 from decimal import Decimal  # noqa: E402
 
-from sqlalchemy import Boolean, Date, ForeignKey, Numeric, UniqueConstraint  # noqa: E402
+from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Numeric, UniqueConstraint  # noqa: E402
 from sqlalchemy.orm import relationship  # noqa: E402
 
 
@@ -115,7 +115,31 @@ class CrmTimestamps:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
-class Company(CrmTimestamps, Base):
+class ImportBatch(Base):
+    """One row per import run (CSV upload or the legacy migration). Rows created by the run
+    carry its id so an admin can undo the whole run. Data tier: Business."""
+    __tablename__ = "import_batches"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(16))            # csv | legacy
+    entity: Mapped[str] = mapped_column(String(32))            # contact | company | legacy
+    filename: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0)
+    undone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    undone_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class ImportedRow:
+    import_batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("import_batches.id", ondelete="SET NULL"), nullable=True, index=True)
+
+
+class Company(ImportedRow, CrmTimestamps, Base):
+    """Data tier: Business."""
     __tablename__ = "companies"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(Text, index=True)
@@ -129,7 +153,8 @@ class Company(CrmTimestamps, Base):
     legacy_ref: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
 
 
-class Contact(CrmTimestamps, Base):
+class Contact(ImportedRow, CrmTimestamps, Base):
+    """Data tier: Personal."""
     __tablename__ = "contacts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     display_name: Mapped[str] = mapped_column(Text, index=True)
@@ -187,8 +212,14 @@ class PipelineStage(Base):
     is_lost: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class Deal(CrmTimestamps, Base):
+OPEN_DEAL_RULE = "status <> 'open' OR (owner_id IS NOT NULL AND next_action_at IS NOT NULL)"
+
+
+class Deal(ImportedRow, CrmTimestamps, Base):
+    """Data tier: Business (links to Personal rows by id). An open deal always has an owner
+    and a next-action date (comparison item 1, 2026-11-09)."""
     __tablename__ = "deals"
+    __table_args__ = (CheckConstraint(OPEN_DEAL_RULE, name="ck_deals_open_has_owner_and_next_action"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pipeline_id: Mapped[int] = mapped_column(ForeignKey("pipelines.id"), index=True)
     stage_id: Mapped[int] = mapped_column(ForeignKey("pipeline_stages.id"), index=True)
@@ -199,6 +230,7 @@ class Deal(CrmTimestamps, Base):
     property_id: Mapped[int | None] = mapped_column(ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     expected_close: Mapped[date | None] = mapped_column(Date, nullable=True)
+    next_action_at: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     lost_reason: Mapped[str] = mapped_column(Text, default="")
     owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extra: Mapped[dict] = mapped_column(JSONType, default=dict)

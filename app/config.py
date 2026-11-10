@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     jwt_audience: str = "authenticated"
     bootstrap_admin_emails: str = ""
+    # When true, staff and admin tokens must carry Supabase's `aal` claim at "aal2" (TOTP completed).
+    # Turn on only after every staff account has enrolled a factor, or they lock themselves out.
+    require_staff_mfa: bool = False
     db_pool_size: int = 5
     db_max_overflow: int = 5
     db_pool_recycle_seconds: int = 1800

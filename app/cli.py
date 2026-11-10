@@ -25,9 +25,12 @@ def main(argv: list[str] | None = None) -> int:
     m = sub.add_parser("migrate-legacy", help="Move prospects, residents, properties into the CRM")
     m.add_argument("--apply", action="store_true", help="Write changes (default is a dry run)")
     m.add_argument("--allow-partial", action="store_true", help="Apply even if some rows are rejected")
-    m.add_argument("--actor", default=None, help="User id to record as deal owner and history actor")
+    m.add_argument("--actor", default=None,
+                   help="User id recorded as deal owner and history actor (required with --apply)")
     sub.add_parser("seed-pipelines", help="Create the default pipelines if missing")
     args = ap.parse_args(argv)
+    if args.cmd == "migrate-legacy" and args.apply and not args.actor:
+        ap.error("--apply needs --actor <your user id>: open deals must have an owner")
 
     db = _session()
     if args.cmd == "seed-pipelines":
@@ -41,7 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{len(report.rejections)} row(s) rejected; nothing written. Fix them or pass --allow-partial.",
               file=sys.stderr)
         return 1
-    print("\nDRY RUN: nothing written. Re-run with --apply." if report.dry_run else "\nApplied.")
+    print("\nDRY RUN: nothing written. Re-run with --apply --actor <user id>." if report.dry_run
+          else f"\nApplied as import batch {report.batch_id}. Undo: POST /api/imports/{report.batch_id}/undo (admin).")
     return 0
 
 

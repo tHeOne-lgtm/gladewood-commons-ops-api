@@ -4,6 +4,9 @@ Dry run by default: scans every row, parses money and dates, maps statuses to
 pipeline stages, and reports every row it would reject. Nothing is written
 unless apply=True and there are zero rejections (or allow_partial=True).
 Idempotent: each created contact or deal carries legacy_ref="<table>:<id>".
+An applied run is an import batch (comparison item 4) so an admin can undo it, and it
+needs an actor: open deals must have an owner and a next-action date (item 1), so the
+actor becomes the owner and the apply date becomes the first next action.
 """
 import re
 from datetime import date, datetime
@@ -12,6 +15,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.imports import start_batch
 from app.models import Contact, Deal, DealStageHistory, Pipeline, Property, Prospect, Resident
 from app.schemas_crm import MigrationRejection, MigrationReport
 from app.seed import seed_default_pipelines
@@ -65,6 +69,8 @@ def _stage(pipeline: Pipeline, mapping: dict[str, str], raw: str):
 
 def run_legacy_migration(db: Session, *, apply: bool = False, allow_partial: bool = False,
                          actor_id: str | None = None) -> MigrationReport:
+    if apply and not actor_id:
+        raise ValueError("an actor id is required to apply: it becomes the owner of every open deal")
     seed_default_pipelines(db)
     pipelines = {p.slug: p for p in db.scalars(select(Pipeline)).all()}
     inquiry, property_pipe = pipelines["resident-inquiry"], pipelines["property"]
@@ -158,8 +164,12 @@ def run_legacy_migration(db: Session, *, apply: bool = False, allow_partial: boo
         db.rollback()
         return report
 
+    batch = start_batch(db, source="legacy", entity="legacy", filename="", actor=None)
+    batch.created_by = actor_id
+    batch.row_count = sum(scanned.values())
     for kind, obj in plan:
         if kind == "contact":
+            obj.import_batch_id = batch.id
             db.add(obj)
     db.flush()
     for kind, obj in plan:
@@ -169,8 +179,13 @@ def run_legacy_migration(db: Session, *, apply: bool = False, allow_partial: boo
                 deal.contact_id = contact.id
             deal.stage_id = stage.id
             deal.status = "won" if stage.is_won else "lost" if stage.is_lost else "open"
+            deal.next_action_at = date.today() if deal.status == "open" else None
+            deal.import_batch_id = batch.id
             db.add(deal)
             db.flush()
             db.add(DealStageHistory(deal_id=deal.id, from_stage_id=None, to_stage_id=stage.id, actor_id=actor_id))
+    batch.created_count = would["contacts"] + would["deals"]
+    batch.error_count = len(rejections)
+    report.batch_id = batch.id
     db.commit()
     return report

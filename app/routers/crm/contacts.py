@@ -11,6 +11,7 @@ from app.auth import require_staff
 from app.crm_common import (csv_response, diff, ensure_exists, get_or_404, read_csv_upload, set_tags,
                             snapshot, tags_for)
 from app.db import get_db
+from app.imports import DuplicateIndex, start_batch
 from app.models import Company, Contact, RecordTag, Tag, User
 from app.schemas import DeleteResult
 from app.schemas_crm import ContactIn, ContactOut, DuplicateGroup, ImportError_, ImportResult, TagsSet
@@ -67,9 +68,15 @@ def export_contacts(db: Session = Depends(get_db), _: User = Depends(require_sta
 
 
 @router.post("/import", response_model=ImportResult)
-async def import_contacts(file: UploadFile, db: Session = Depends(get_db), user: User = Depends(require_staff)):
+async def import_contacts(file: UploadFile, allow_duplicates: bool = False, db: Session = Depends(get_db),
+                          user: User = Depends(require_staff)):
+    """Rows that match an existing contact or an earlier row (email, phone, or name) are listed
+    under `duplicates` and not inserted, unless `allow_duplicates=true`. Every run is an
+    import batch an admin can undo."""
     rows = await read_csv_upload(file)
-    created, errors = 0, []
+    batch = start_batch(db, source="csv", entity="contact", filename=file.filename or "", actor=user)
+    index = DuplicateIndex.from_db(db)
+    created, errors, duplicates = 0, [], []
     for i, raw in enumerate(rows, start=2):
         try:
             data = {k: v for k, v in raw.items() if k in FIELDS and k != "extra"}
@@ -82,17 +89,25 @@ async def import_contacts(file: UploadFile, db: Session = Depends(get_db), user:
             msg = "; ".join(e["msg"] for e in exc.errors()) if isinstance(exc, ValidationError) else str(exc)
             errors.append(ImportError_(row=i, error=msg))
             continue
-        row = Contact(**item.model_dump())
+        found = index.matches(i, item.email, item.phone, item.display_name)
+        if found and not allow_duplicates:
+            duplicates.extend(found)
+            continue
+        row = Contact(**item.model_dump(), import_batch_id=batch.id)
         db.add(row)
         db.flush()
+        index.add(item.email, item.phone, item.display_name, contact_id=row.id, row=i)
         tags = [t for t in (raw.get("tags") or "").split("|") if t.strip()]
         if tags:
             set_tags(db, "contact", row.id, tags)
         created += 1
-    write_audit(db, actor=user, action="contact.import", entity="contact",
-                details={"created": created, "errors": len(errors)})
+    batch.row_count, batch.created_count, batch.error_count = len(rows), created, len(errors)
+    batch.duplicate_count = len({d.row for d in duplicates})
+    write_audit(db, actor=user, action="contact.import", entity="contact", entity_id=batch.id,
+                details={"batch_id": batch.id, "created": created, "errors": len(errors),
+                         "duplicate_rows": batch.duplicate_count})
     db.commit()
-    return ImportResult(created=created, errors=errors)
+    return ImportResult(batch_id=batch.id, created=created, errors=errors, duplicates=duplicates)
 
 
 @router.get("/duplicates", response_model=list[DuplicateGroup])

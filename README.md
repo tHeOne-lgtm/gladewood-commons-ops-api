@@ -38,6 +38,7 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `SUPABASE_URL` | One of these two | Project URL; JWTs are verified against `/auth/v1/.well-known/jwks.json`. |
 | `SUPABASE_JWT_SECRET` | One of these two | Legacy HS256 secret for projects that still use it. |
 | `BOOTSTRAP_ADMIN_EMAILS` | First deploy | Emails that receive the `admin` role on their first login. Remove after the first admin exists. |
+| `REQUIRE_STAFF_MFA` | No (default `false`) | When `true`, `admin` and `staff` tokens must carry Supabase's `aal` claim at `aal2` (an authenticator code was entered this session). `GET /api/me` still answers and reports `mfa_required` so a page can prompt for the code. Turn on only after every staff account has enrolled a TOTP factor. |
 | `ENV` | No | `development`, `test`, or `production`. |
 
 Copy `.env.example` to `.env` for local work. Never commit `.env`.
@@ -48,7 +49,8 @@ Every endpoint except `GET /api/health` requires `Authorization: Bearer <Supabas
 
 - A user's first login creates a `users` row with role `pending` (or `admin` if the email is in `BOOTSTRAP_ADMIN_EMAILS`).
 - Roles: `admin`, `staff`, `tenant`, `case_manager`, `pending`. The operations endpoints require `admin` or `staff`.
-- Admins assign roles with `PUT /api/users/{id}/role`. `GET /api/me` returns the caller's role.
+- Admins assign roles with `PUT /api/users/{id}/role`. `GET /api/me` returns the caller's role and `mfa_required`.
+- Staff MFA (decided 2026-11-09): staff enroll a TOTP authenticator in Supabase Auth. With `REQUIRE_STAFF_MFA=true` the API refuses `admin` and `staff` tokens whose `aal` claim is not `aal2`; `GET /api/me` is the one staff route that still answers, so the page can ask for the code.
 - Every create, update, delete, role change, and first login writes to `audit_log`. The application never updates or deletes audit rows.
 
 ## Run locally
@@ -79,23 +81,25 @@ All routes require `admin` or `staff`. Every write is audited; `GET /api/timelin
 | Resource | Routes | Notes |
 |---|---|---|
 | Companies | `/api/companies`, `/export`, `/import` | Kinds: property_owner, brokerage, agency, hospital, employer, vendor, other |
-| Contacts | `/api/contacts`, `/{id}/tags`, `/duplicates`, `/export`, `/import` | Filters: `q`, `kind`, `status` (`active`, `archived`, `all`), `company_id`, `tag`. Duplicates by email, phone, or name |
+| Contacts | `/api/contacts`, `/{id}/tags`, `/duplicates`, `/export`, `/import` | Filters: `q`, `kind`, `status` (`active`, `archived`, `all`), `company_id`, `tag`. Duplicates by email, phone, or name. Import rows that match an existing contact or an earlier row are listed under `duplicates` and skipped unless `?allow_duplicates=true` |
+| Imports | `/api/imports`, `/{id}`, `/{id}/undo` | Every CSV import and the legacy migration is a batch; rows carry `import_batch_id`. Undo (admin) deletes the batch's rows once |
 | Pipelines | `/api/pipelines`, `/{id}/summary` | Create and edit need `admin`; a stage holding deals cannot be removed |
-| Deals | `/api/deals`, `/{id}/move`, `/export` | A move into a won or lost stage closes the deal; stage history is kept |
+| Deals | `/api/deals`, `/{id}/move`, `/export` | An open deal must have `owner_id` (defaults to the caller) and `next_action_at`; the database enforces the same rule. A move into a won or lost stage closes the deal and clears `next_action_at`; reopening needs a new one. Stage history is kept |
 | Activities | `/api/activities`, `/{id}/complete`, `/export` | Kinds: task, event, call. Filters: `mine`, `overdue`, `due_before`, `open_only` |
 | Notes | `/api/notes?entity=&entity_id=` | Only the author or an admin can edit or delete |
+| Today | `/api/today` | Counts of overdue and due-today deals and activities for the caller and for everyone, plus the caller's own items by title. No contact records, so it can feed the Command Center |
 
 Every CRM record accepts `extra`, a flat JSON object of up to 30 snake_case keys, for fields that do not deserve a column yet. Resident and prospect records use initials as `display_name`; keep health, disability, and clinical details out of every field.
 
 ### Migrating the legacy tables into the CRM
 
 ```
-python -m app.cli migrate-legacy            # dry run: prints scanned counts and every rejected row
-python -m app.cli migrate-legacy --apply    # writes only when there are zero rejections
+python -m app.cli migrate-legacy                               # dry run: prints scanned counts and every rejected row
+python -m app.cli migrate-legacy --apply --actor <your user id> # writes only when there are zero rejections
 python -m app.cli migrate-legacy --apply --allow-partial --actor <your user id>
 ```
 
-Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline; residents become `resident` contacts; properties become deals in the Property pipeline linked by `property_id`. Money and date text is parsed and unparseable values are rejected. Re-running skips rows already migrated (`legacy_ref`). The legacy tables are left in place.
+Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline; residents become `resident` contacts; properties become deals in the Property pipeline linked by `property_id`. Money and date text is parsed and unparseable values are rejected. Re-running skips rows already migrated (`legacy_ref`). The legacy tables are left in place. `--actor` is required with `--apply`: that user becomes the owner of every open deal, the apply date becomes each open deal's first `next_action_at`, and the run is recorded as an import batch that an admin can undo with `POST /api/imports/{id}/undo`.
 
 ## Migrations
 

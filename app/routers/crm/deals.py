@@ -13,7 +13,8 @@ from app.schemas_crm import DealIn, DealMove, DealOut
 router = APIRouter(prefix="/api/deals", tags=["crm: deals"])
 FIELDS = [f for f in DealIn.model_fields] + ["status", "closed_at"]
 CSV_FIELDS = ["id", "title", "pipeline_id", "stage_id", "stage_name", "status", "contact_id", "company_id",
-              "property_id", "amount", "expected_close", "owner_id", "lost_reason", "closed_at", "created_at"]
+              "property_id", "amount", "expected_close", "next_action_at", "owner_id", "lost_reason", "closed_at",
+              "import_batch_id", "created_at"]
 
 
 def _out(row: Deal) -> DealOut:
@@ -51,6 +52,17 @@ def _validate_links(db: Session, item: DealIn) -> None:
     ensure_exists(db, Property, item.property_id, "Property")
     if item.owner_id is not None and db.get(User, item.owner_id) is None:
         raise HTTPException(status_code=422, detail="owner_id is not a known user")
+
+
+def _require_open_fields(stage: PipelineStage, owner_id: str | None, next_action_at) -> None:
+    """Comparison item 1: an open deal carries an owner and a next-action date.
+    Checked before the row is changed, so a refused request leaves nothing dirty in the session."""
+    if stage.is_won or stage.is_lost:
+        return
+    if owner_id is None:
+        raise HTTPException(status_code=422, detail="owner_id is required while a deal is open")
+    if next_action_at is None:
+        raise HTTPException(status_code=422, detail="next_action_at is required while a deal is open")
 
 
 def _query(pipeline_id, stage_id, status, contact_id, company_id, property_id, owner_id, q):
@@ -94,9 +106,9 @@ def get_deal(row_id: int, db: Session = Depends(get_db), _: User = Depends(requi
 def create_deal(item: DealIn, db: Session = Depends(get_db), user: User = Depends(require_staff)):
     _validate_links(db, item)
     stage = _stage_for(db, item.pipeline_id, item.stage_id)
-    row = Deal(**item.model_dump(exclude={"stage_id", "lost_reason"}))
-    if row.owner_id is None:
-        row.owner_id = user.id
+    owner_id = item.owner_id or user.id
+    _require_open_fields(stage, owner_id, item.next_action_at)
+    row = Deal(**item.model_dump(exclude={"stage_id", "lost_reason", "owner_id"}), owner_id=owner_id)
     _apply_stage(row, stage, item.lost_reason)
     db.add(row)
     db.flush()
@@ -113,11 +125,15 @@ def update_deal(row_id: int, item: DealIn, db: Session = Depends(get_db), user: 
     _validate_links(db, item)
     if item.pipeline_id != row.pipeline_id:
         raise HTTPException(status_code=422, detail="Use a new deal to change pipelines")
+    stage_changes = item.stage_id is not None and item.stage_id != row.stage_id
+    stage = _stage_for(db, row.pipeline_id, item.stage_id) if stage_changes else row.stage
+    owner_id = item.owner_id or row.owner_id   # the owner of an open deal cannot be cleared, only changed
+    _require_open_fields(stage, owner_id, item.next_action_at)
     before = snapshot(row, FIELDS)
-    for k, v in item.model_dump(exclude={"stage_id", "lost_reason", "pipeline_id"}).items():
+    for k, v in item.model_dump(exclude={"stage_id", "lost_reason", "pipeline_id", "owner_id"}).items():
         setattr(row, k, v)
-    if item.stage_id is not None and item.stage_id != row.stage_id:
-        stage = _stage_for(db, row.pipeline_id, item.stage_id)
+    row.owner_id = owner_id
+    if stage_changes:
         db.add(DealStageHistory(deal_id=row.id, from_stage_id=row.stage_id, to_stage_id=stage.id,
                                 actor_id=user.id))
         _apply_stage(row, stage, item.lost_reason)
@@ -134,9 +150,14 @@ def move_deal(row_id: int, payload: DealMove, db: Session = Depends(get_db), use
     stage = _stage_for(db, row.pipeline_id, payload.stage_id)
     if stage.id == row.stage_id:
         return _out(row)
+    owner_id = row.owner_id or user.id
+    next_action_at = payload.next_action_at or row.next_action_at
+    _require_open_fields(stage, owner_id, next_action_at)
     from_name = row.stage.name
     db.add(DealStageHistory(deal_id=row.id, from_stage_id=row.stage_id, to_stage_id=stage.id, actor_id=user.id))
     _apply_stage(row, stage, payload.lost_reason)
+    row.owner_id = owner_id
+    row.next_action_at = next_action_at if row.status == "open" else None
     write_audit(db, actor=user, action="deal.move", entity="deal", entity_id=row_id,
                 details={"changes": {"stage": [from_name, stage.name]}, "status": row.status})
     db.commit()

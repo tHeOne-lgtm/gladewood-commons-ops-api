@@ -7,6 +7,7 @@ from app.audit import write_audit
 from app.auth import require_staff
 from app.crm_common import csv_response, diff, get_or_404, read_csv_upload, snapshot
 from app.db import get_db
+from app.imports import start_batch
 from app.models import Company, User
 from app.schemas import DeleteResult
 from app.schemas_crm import CompanyIn, CompanyOut, ImportError_, ImportResult
@@ -42,6 +43,7 @@ def export_companies(db: Session = Depends(get_db), _: User = Depends(require_st
 @router.post("/import", response_model=ImportResult)
 async def import_companies(file: UploadFile, db: Session = Depends(get_db), user: User = Depends(require_staff)):
     rows = await read_csv_upload(file)
+    batch = start_batch(db, source="csv", entity="company", filename=file.filename or "", actor=user)
     created, errors = 0, []
     for i, raw in enumerate(rows, start=2):
         try:
@@ -49,12 +51,13 @@ async def import_companies(file: UploadFile, db: Session = Depends(get_db), user
         except ValidationError as exc:
             errors.append(ImportError_(row=i, error="; ".join(e["msg"] for e in exc.errors())))
             continue
-        db.add(Company(**item.model_dump()))
+        db.add(Company(**item.model_dump(), import_batch_id=batch.id))
         created += 1
-    write_audit(db, actor=user, action="company.import", entity="company",
-                details={"created": created, "errors": len(errors)})
+    batch.row_count, batch.created_count, batch.error_count = len(rows), created, len(errors)
+    write_audit(db, actor=user, action="company.import", entity="company", entity_id=batch.id,
+                details={"batch_id": batch.id, "created": created, "errors": len(errors)})
     db.commit()
-    return ImportResult(created=created, errors=errors)
+    return ImportResult(batch_id=batch.id, created=created, errors=errors)
 
 
 @router.get("/{row_id}", response_model=CompanyOut)

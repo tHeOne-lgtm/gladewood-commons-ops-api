@@ -1,10 +1,11 @@
 """Current-user and admin role management."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
-from app.auth import get_current_user, require_admin
+from app.auth import get_current_user, mfa_required, require_admin
+from app.config import Settings, settings_dep
 from app.db import get_db
 from app.models import User
 from app.schemas import RoleUpdate, UserOut
@@ -13,8 +14,10 @@ router = APIRouter(prefix="/api", tags=["users"])
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)):
-    return user
+def me(request: Request, user: User = Depends(get_current_user), settings: Settings = Depends(settings_dep)):
+    out = UserOut.model_validate(user)
+    out.mfa_required = mfa_required(request, user, settings)
+    return out
 
 
 @router.get("/users", response_model=list[UserOut])

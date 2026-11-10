@@ -40,25 +40,40 @@ function token(){var c=sb();if(!c)return Promise.reject(new Error('Paste the Sup
 function api(path,opt){var base=S().settings.api;if(!base)return Promise.reject(new Error('Set the API base URL first.'));opt=opt||{};
   return token().then(function(tk){opt.headers={'Content-Type':'application/json','Authorization':'Bearer '+tk};return fetch(base+path,opt)}).then(function(r){
     if(r.status===401)throw new Error('Session expired. Sign in again.');
-    if(r.status===403)throw new Error('This account has no staff role yet. Ask Paul to assign one.');
+    if(r.status===403)return r.json().then(function(j){throw new Error((j&&j.detail)||'This account has no staff role yet.')},function(){throw new Error('This account has no staff role yet.')});
     if(!r.ok)throw new Error(path+' → HTTP '+r.status);return r.status===204?null:r.json()})}
 function gwSignIn(email){var c=sb();if(!c)return Promise.reject(new Error('Paste the Supabase publishable key first.'));return c.auth.signInWithOtp({email:email,options:{emailRedirectTo:location.origin+location.pathname}}).then(function(r){if(r.error)throw r.error})}
+function gwSignInPw(email,pw){var c=sb();if(!c)return Promise.reject(new Error('Paste the Supabase publishable key first.'));return c.auth.signInWithPassword({email:email,password:pw}).then(function(r){if(r.error)throw r.error})}
 function gwSignOut(){var c=sb();return c?c.auth.signOut():Promise.resolve()}
 function gwWho(){var el=$('#gwWho');if(!el)return;var c=sb();if(!c){el.textContent='Paste the Supabase publishable key to enable sign-in.';return}
   el.textContent='Checking sign-in…';c.auth.getSession().then(function(r){var s=r.data&&r.data.session;if(!s){el.textContent='Not signed in';return}
     var em=(s.user&&s.user.email)||'';el.textContent='Signed in as '+em+'; contacting API (a sleeping free instance can take up to 60 s)…';
-    return api('/api/me').then(function(u){el.textContent=u.email+' ('+u.role+')'}).catch(function(e){el.textContent='Signed in as '+em+'; API: '+e.message})})}""" + t[b:]
+    return api('/api/me').then(function(u){el.textContent=u.email+' ('+u.role+')'+(u.mfa_required?'; second factor required: sign in again with your authenticator code':'')}).catch(function(e){el.textContent='Signed in as '+em+'; API: '+e.message})})}""" + t[b:]
+# 3b. Counts only (decision 2026-11-09): the Pull of property, prospect, and resident records into this
+# public page is replaced by GET /api/today, which returns counts and the signed-in member's own titles.
+a = t.index("if(mode==='pull'){"); b = t.index("msg('Pulled from backend.')}).catch(function(e){msg(e.message,1)});return}", a) + len("msg('Pulled from backend.')}).catch(function(e){msg(e.message,1)});return}")
+t = t[:a] + r"""if(mode==='today'){msg('Loading today…');api('/api/today').then(function(t){var el=$('#gwToday');var m=t.mine,a=t.all;
+    el.textContent='Today ('+t.date+'). You: '+m.deals_overdue+' overdue and '+m.deals_due_today+' due-today deals; '+m.activities_overdue+' overdue and '+m.activities_due_today+' due-today tasks; '+m.open_deals+' open deals. Everyone: '+a.deals_overdue+' overdue and '+a.deals_due_today+' due-today deals; '+a.activities_overdue+' overdue and '+a.activities_due_today+' due-today tasks; '+a.open_deals+' open deals. ';
+    var link=document.createElement('a');link.href=S().settings.api+'/docs';link.target='_blank';link.rel='noopener';link.textContent='Open the API';el.appendChild(link);
+    msg('Today counts loaded. Counts only; no records are kept in this page.')}).catch(function(e){msg(e.message,1)});return}""" + t[b:]
+# 3c. the Pull button becomes Today counts, with a line to show them
+rep('<button class="btn sm" onclick="CC.sync(\'pull\')">Pull ↓</button><button class="btn sm" onclick="CC.sync(\'push\')">Push ↑</button></div>',
+    '<button class="btn sm" onclick="CC.sync(\'today\')">Today counts</button><button class="btn sm" onclick="CC.sync(\'push\')">Push ↑</button></div>'
+    '\n        <div class="small" id="gwToday" style="margin-top:8px"></div>')
 # 4. sign-in fields on the sync card
 label = '<label class="f">API base URL<input class="in" id="apiUrl" placeholder="https://your-service.onrender.com"></label>'
 rep(label, label +
  '\n        <label class="f">Supabase publishable key<input class="in" id="sbKey" placeholder="sb_publishable_..." autocomplete="off"></label>'
  '\n        <label class="f">Staff email<input class="in" id="gwEmail" type="email" autocomplete="email" placeholder="you@gladewoodcommons.com"></label>'
- '\n        <div class="row" style="margin-top:8px;gap:8px"><button class="btn sm" id="gwSignIn">Email me a sign-in link</button><button class="btn sm" id="gwSignOut">Sign out</button><span class="small" id="gwWho"></span></div>')
+ '\n        <label class="f">Password<input class="in" id="gwPass" type="password" autocomplete="current-password" placeholder="Staff password"></label>'
+ '\n        <div class="row" style="margin-top:8px;gap:8px"><button class="btn sm" id="gwPwSignIn">Sign in</button><button class="btn sm" id="gwSignIn">Email me a sign-in link instead</button><button class="btn sm" id="gwSignOut">Sign out</button><span class="small" id="gwWho"></span></div>')
 # 5. wiring, guarded so an error can never break the rest of the sync module
 onchange = "$('#apiUrl').onchange=function(){S().settings.api=this.value.trim().replace(/\\/+$/,'');save()};"
 rep(onchange, onchange + r"""
 $('#sbKey').value=gwKey();$('#sbKey').onchange=function(){try{localStorage.setItem('gw-sb-key.v1',this.value.trim())}catch(e){}sbClient=null;gwWho()};
 $('#gwSignIn').onclick=function(){var e=$('#gwEmail').value.trim();if(!e){msg('Enter your staff email.',1);return}gwSignIn(e).then(function(){msg('Check your email for the sign-in link.')}).catch(function(err){msg(err.message,1)})};
+$('#gwPwSignIn').onclick=function(){var e=$('#gwEmail').value.trim(),p=$('#gwPass').value;if(!e||!p){msg('Enter your staff email and password.',1);return}gwSignInPw(e,p).then(function(){$('#gwPass').value='';msg('Signed in.');gwWho()}).catch(function(err){msg(err.message,1)})};
+$('#gwPass').onkeydown=function(ev){if(ev.key==='Enter'){ev.preventDefault();$('#gwPwSignIn').click()}};
 $('#gwSignOut').onclick=function(){gwSignOut().then(function(){msg('Signed out.');gwWho()})};
 (function(){var h=window.__gwAuthHash||'';var m=/error_description=([^&]+)/.exec(h);if(m){msg(decodeURIComponent(m[1].replace(/\+/g,' ')),1)}try{if(gwKey())sb()}catch(e){msg('Sign-in setup error: '+(e&&e.message||e),1)}})();setTimeout(gwWho,300);
 window.addEventListener('hashchange',function(){var h=location.hash||'';if(/access_token=|error_description=/.test(h)){window.__gwAuthHash=h;try{if(sb())consumeAuthHash()}catch(e){}}});""")
@@ -67,5 +82,9 @@ open(p, "w", encoding="utf-8").write(t)
 hp = os.path.join(out, "_headers"); h = open(hp, encoding="utf-8").read()
 assert h.count("connect-src https://hook.us2.make.com") == 1
 h = h.replace("connect-src https://hook.us2.make.com", "connect-src %s %s https://hook.us2.make.com" % (API_URL, SB_URL), 1)
+# The live site's headers (deployed 2026-11-07) also allow api.openalex.org, which the original zip's _headers lacks.
+if "https://api.openalex.org" not in h:
+    h = h.replace("https://*.ts.net;", "https://*.ts.net https://api.openalex.org;", 1)
+assert "https://api.openalex.org" in h
 open(hp, "w", encoding="utf-8").write(h)
 print("patched:", out, "| connect-src:", re.search(r"connect-src[^;]+", h).group(0))
