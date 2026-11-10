@@ -307,3 +307,59 @@ class MigrationReport(BaseModel):
     would_create: dict[str, int]
     skipped_existing: dict[str, int]
     rejections: list[MigrationRejection]
+
+
+# --- comparison item 5: decision log and consents ---------------------------------------
+DecisionEntity = Literal["deal", "contact"]
+DecisionOutcome = Literal["approved", "declined", "withdrawn"]
+ConsentType = Literal["sms", "email", "calls", "portal", "partner_sharing"]
+ConsentSource = Literal["form", "email", "phone", "in_person", "import"]
+
+
+class DecisionIn(BaseModel):
+    entity: DecisionEntity
+    entity_id: int
+    criteria_version: str = Field(min_length=1, max_length=32)
+    criteria_met: bool
+    outcome: DecisionOutcome
+    reason: str = Field(min_length=3, max_length=500,
+                        description="Name the written criterion applied. Never a protected trait.")
+
+    @field_validator("criteria_version", "reason")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip()
+
+
+class DecisionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    entity: str
+    entity_id: int
+    criteria_version: str
+    criteria_met: bool
+    outcome: str
+    reason: str
+    decided_by: str
+    decided_at: datetime
+    retain_until: date
+
+
+class ConsentIn(BaseModel):
+    contact_id: int
+    consent_type: ConsentType
+    source: ConsentSource
+    given_at: datetime | None = None
+
+
+class ConsentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    contact_id: int
+    consent_type: str
+    source: str
+    given_at: datetime
+    withdrawn_at: datetime | None
+    recorded_by: str | None
+    withdrawn_by: str | None
+    active: bool = False

@@ -274,3 +274,39 @@ class Note(Base):
     author_email: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Comparison item 5 (2026-11-09): decision log and consents
+# ---------------------------------------------------------------------------
+class DecisionLog(Base):
+    """One row per application decision: which written criteria version was applied, whether it was
+    met, the outcome, and a short reason that must name a criterion and never a protected trait.
+    Append-only: no update or delete route exists, and rows are kept for at least two years
+    (Fair Housing Rule 11). Data tier: Personal."""
+    __tablename__ = "decision_log"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity: Mapped[str] = mapped_column(String(16), index=True)          # deal | contact
+    entity_id: Mapped[int] = mapped_column(Integer, index=True)
+    criteria_version: Mapped[str] = mapped_column(String(32))
+    criteria_met: Mapped[bool] = mapped_column(Boolean)
+    outcome: Mapped[str] = mapped_column(String(16), index=True)         # approved | declined | withdrawn
+    reason: Mapped[str] = mapped_column(String(500))
+    decided_by: Mapped[str] = mapped_column(String(64), index=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    retain_until: Mapped[date] = mapped_column(Date)                      # decided_at + 2 years, minimum
+
+
+class Consent(Base):
+    """A contact's consent for one channel or purpose, with when it was given, where it came from,
+    and when it was withdrawn. A consent is active while `withdrawn_at` is null. No free text:
+    the row records the fact of consent, nothing about the person. Data tier: Personal."""
+    __tablename__ = "consents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), index=True)
+    consent_type: Mapped[str] = mapped_column(String(32), index=True)    # sms | email | calls | portal | partner_sharing
+    source: Mapped[str] = mapped_column(String(16))                      # form | email | phone | in_person | import
+    given_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    withdrawn_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
