@@ -40,6 +40,10 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `BOOTSTRAP_ADMIN_EMAILS` | First deploy | Emails that receive the `admin` role on their first login. Remove after the first admin exists. |
 | `REQUIRE_STAFF_MFA` | No (default `false`) | When `true`, `admin` and `staff` tokens must carry Supabase's `aal` claim at `aal2` (an authenticator code was entered this session). `GET /api/me` still answers and reports `mfa_required` so a page can prompt for the code. Turn on only after every staff account has enrolled a TOTP factor. |
 | `ENV` | No | `development`, `test`, or `production`. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | For WhatsApp | From the Twilio console. The auth token also validates incoming webhooks. |
+| `TWILIO_WHATSAPP_FROM` | For WhatsApp | The WhatsApp sender in E.164, for example `+14155238886`. |
+| `PUBLIC_BASE_URL` | For WhatsApp | `https://gladewood-commons-ops-api.onrender.com`; used to validate Twilio signatures and as the status callback. |
+| `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
 
 Copy `.env.example` to `.env` for local work. Never commit `.env`.
 
@@ -102,6 +106,10 @@ python -m app.cli migrate-legacy --apply --allow-partial --actor <your user id>
 ```
 
 Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline; residents become `resident` contacts; properties become deals in the Property pipeline linked by `property_id`. Money and date text is parsed and unparseable values are rejected. Re-running skips rows already migrated (`legacy_ref`). The legacy tables are left in place. `--actor` is required with `--apply`: that user becomes the owner of every open deal, the apply date becomes each open deal's first `next_action_at`, and the run is recorded as an import batch that an admin can undo with `POST /api/imports/{id}/undo`.
+
+## WhatsApp (Twilio)
+
+Point the Twilio WhatsApp sender's inbound webhook at `POST /api/webhooks/twilio/whatsapp` and its status callback at `POST /api/webhooks/twilio/status`, both on the public API URL. Every inbound message is signature-checked, matched to a contact by phone (or creates a `prospect` tagged `src-whatsapp`), records WhatsApp consent (a STOP keyword withdraws it), and opens a Resident inquiry deal when the contact has none open. Staff read and reply through `GET /api/conversations`, `GET /api/conversations/{phone}/messages`, `POST /api/conversations/{phone}/read`, and `POST /api/messages/whatsapp`. Replies outside the 24 hour window need `allow_outside_window` and an approved template on the Twilio side.
 
 ## Migrations
 

@@ -58,6 +58,10 @@ def settings():
         supabase_jwt_secret=TEST_SECRET,
         cors_origins=ALLOWED_ORIGIN,
         bootstrap_admin_emails=ADMIN_EMAIL,
+        twilio_account_sid="ACtest",
+        twilio_auth_token="twilio-test-token",
+        twilio_whatsapp_from="+15550001111",
+        public_base_url="http://testserver",
     )
 
 

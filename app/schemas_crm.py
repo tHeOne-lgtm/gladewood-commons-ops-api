@@ -316,8 +316,8 @@ class MigrationReport(BaseModel):
 # --- comparison item 5: decision log and consents ---------------------------------------
 DecisionEntity = Literal["deal", "contact"]
 DecisionOutcome = Literal["approved", "declined", "withdrawn"]
-ConsentType = Literal["sms", "email", "calls", "portal", "partner_sharing"]
-ConsentSource = Literal["form", "email", "phone", "in_person", "import"]
+ConsentType = Literal["sms", "whatsapp", "email", "calls", "portal", "partner_sharing"]
+ConsentSource = Literal["form", "email", "phone", "in_person", "import", "whatsapp"]
 
 
 class DecisionIn(BaseModel):
@@ -367,3 +367,37 @@ class ConsentOut(BaseModel):
     recorded_by: str | None
     withdrawn_by: str | None
     active: bool = False
+
+
+class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    channel: str
+    direction: str
+    contact_id: int | None
+    deal_id: int | None
+    phone: str
+    body: str
+    status: str
+    error_code: str | None
+    media_count: int
+    sent_by: str | None
+    read_at: datetime | None
+    created_at: datetime
+
+
+class ConversationOut(BaseModel):
+    phone: str
+    contact_id: int | None
+    contact_name: str | None
+    consent_active: bool
+    window_open: bool
+    unread_count: int
+    last_message: MessageOut
+
+
+class SendMessageIn(BaseModel):
+    contact_id: int | None = None
+    phone: str | None = None
+    body: str = Field(min_length=1, max_length=1600)
+    allow_outside_window: bool = False

@@ -313,3 +313,26 @@ class Consent(Base):
     withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     recorded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     withdrawn_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class Message(Base):
+    """One WhatsApp (or SMS) message, inbound or outbound, keyed to a phone number and, when
+    matched, a contact. Body text is operational conversation content; never copy it into
+    notes or templates. Data tier: Personal."""
+    __tablename__ = "messages"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel: Mapped[str] = mapped_column(String(16), default="whatsapp", index=True)
+    direction: Mapped[str] = mapped_column(String(3))  # in | out
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    phone: Mapped[str] = mapped_column(String(32), index=True)  # E.164
+    body: Mapped[str] = mapped_column(Text, default="")
+    provider: Mapped[str] = mapped_column(String(16), default="twilio")
+    provider_sid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="received")  # received|queued|sent|delivered|read|failed|undelivered
+    error_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    media_count: Mapped[int] = mapped_column(Integer, default=0)
+    sent_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

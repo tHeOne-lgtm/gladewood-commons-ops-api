@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_staff
 from app.db import get_db
-from app.models import Activity, AuditLog, Deal, DealStageHistory, Note, PipelineStage, User
+from app.models import Activity, AuditLog, Deal, DealStageHistory, Message, Note, PipelineStage, User
 from app.schemas_crm import TimelineItem
 
 router = APIRouter(prefix="/api/timeline", tags=["crm: timeline"])
@@ -40,6 +40,9 @@ def timeline(entity: str, entity_id: int, limit: int = Query(200, ge=1, le=1000)
                                       summary=f"{names.get(h.from_stage_id, 'new')} → {names.get(h.to_stage_id, '?')}",
                                       ref_id=h.id))
     if entity == "contact":
+        for m in db.scalars(select(Message).where(Message.contact_id == entity_id)).all():
+            items.append(TimelineItem(at=m.created_at, type=f"message.{m.direction}", summary=m.body[:200] or f"({m.media_count} media)",
+                                      ref_id=m.id, details={"status": m.status, "channel": m.channel}))
         for d in db.scalars(select(Deal).where(or_(Deal.contact_id == entity_id))).all():
             items.append(TimelineItem(at=d.created_at, type="deal", summary=d.title, ref_id=d.id,
                                       details={"status": d.status, "stage": d.stage.name if d.stage else None}))
