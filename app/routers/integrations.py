@@ -8,9 +8,9 @@ Auth: header `X-Api-Key` equal to INTEGRATION_API_KEY. Constant-time compare. Th
 nothing outside this router.
 """
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,8 +18,10 @@ from sqlalchemy.orm import Session
 from app.audit import write_audit
 from app.bigin_import import guess_company_kind
 from app.config import Settings, settings_dep
+from app.crm_common import get_or_404
 from app.db import get_db
-from app.models import Company
+from app.fair_housing import protected_term_hits
+from app.models import Activity, Company, Contact, Deal, DealStageHistory, Message, Note, Pipeline
 from app.twilio import normalize_phone
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -96,3 +98,82 @@ def upsert_accounts(body: BiginUpsertIn, db: Session = Depends(get_db), source: 
                 details={"source": source, "rows": len(body.data), "created": created, "updated": updated})
     db.commit()
     return {"data": results, "created": created, "updated": updated}
+
+
+# ---- n8n jobs (comparison items 3 and 13, adopted 2026-11-09) ----
+def _aware(dt: datetime | None) -> datetime | None:
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+@router.get("/stuck-deals")
+def stuck_deals(days: int = Query(14, ge=1, le=365), db: Session = Depends(get_db), _: str = Depends(require_integration_key)):
+    """Item 3: open deals with no stage change, activity, or note for `days` days. n8n drafts a
+    note from this list (draft mode: Paul approves each one) and posts it back through /notes."""
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    slugs = {p.id: p.slug for p in db.scalars(select(Pipeline)).all()}
+    out = []
+    for d in db.scalars(select(Deal).where(Deal.status == "open").order_by(Deal.id)).all():
+        touches = [_aware(d.created_at)]
+        touches += [_aware(h.at) for h in db.scalars(select(DealStageHistory).where(DealStageHistory.deal_id == d.id)).all()]
+        touches += [_aware(a.updated_at) for a in db.scalars(select(Activity).where(Activity.deal_id == d.id)).all()]
+        touches += [_aware(n.created_at) for n in db.scalars(select(Note).where(Note.entity == "deal", Note.entity_id == d.id)).all()]
+        last = max(t for t in touches if t is not None)
+        if last < cutoff:
+            out.append({"deal_id": d.id, "title": d.title, "pipeline": slugs.get(d.pipeline_id, ""),
+                        "stage": d.stage.name if d.stage else None, "owner_id": d.owner_id,
+                        "last_touch_at": last.isoformat(), "days_quiet": (now - last).days,
+                        "next_action_at": d.next_action_at.isoformat() if d.next_action_at else None})
+    return {"days": days, "count": len(out), "deals": out}
+
+
+class IntegrationNoteIn(BaseModel):
+    entity: str = Field(pattern="^(deal|contact|company)$")
+    entity_id: int
+    body: str = Field(min_length=1, max_length=4000)
+    author: str = Field("n8n", max_length=80)
+
+
+@router.post("/notes", status_code=201)
+def post_note(item: IntegrationNoteIn, db: Session = Depends(get_db), source: str = Depends(require_integration_key)):
+    """A note written by an n8n job after Paul approves the draft. Refused when the text carries a
+    protected-trait term (same guard as staff notes and decisions)."""
+    hits = protected_term_hits(item.body)
+    if hits:
+        raise HTTPException(status_code=422, detail=f"Note text is not allowed to carry: {', '.join(hits)}")
+    model = {"deal": Deal, "contact": Contact, "company": Company}[item.entity]
+    get_or_404(db, model, item.entity_id, item.entity.title())
+    row = Note(entity=item.entity, entity_id=item.entity_id, body=item.body, author_id=None, author_email=f"{source}:{item.author}")
+    db.add(row)
+    db.flush()
+    write_audit(db, actor=None, action="note.create", entity=item.entity, entity_id=item.entity_id,
+                details={"note_id": row.id, "source": source, "author": item.author})
+    db.commit()
+    return {"id": row.id, "entity": item.entity, "entity_id": item.entity_id, "created_at": row.created_at}
+
+
+@router.get("/keyword-scan")
+def keyword_scan(db: Session = Depends(get_db), _: str = Depends(require_integration_key)):
+    """Item 13: weekly scan of free-text fields for the Rule 11 word list. Counts only; no text,
+    no ids beyond the table, so nothing restricted leaves this database."""
+    def scan(rows) -> tuple[int, int]:
+        n = hit = 0
+        for text in rows:
+            n += 1
+            if text and protected_term_hits(text):
+                hit += 1
+        return n, hit
+    report = {}
+    for name, stmt in (
+        ("notes", select(Note.body)),
+        ("contact_notes", select(Contact.notes).where(Contact.notes != "")),
+        ("company_notes", select(Company.notes).where(Company.notes != "")),
+        ("deal_lost_reasons", select(Deal.lost_reason).where(Deal.lost_reason != "")),
+        ("activity_bodies", select(Activity.body).where(Activity.body != "")),
+        ("activity_subjects", select(Activity.subject)),
+        ("messages", select(Message.body)),
+    ):
+        scanned, flagged = scan(db.scalars(stmt).all())
+        report[name] = {"scanned": scanned, "flagged": flagged}
+    return {"scanned_at": datetime.now(timezone.utc).isoformat(), "fields": report,
+            "flagged_total": sum(v["flagged"] for v in report.values())}
