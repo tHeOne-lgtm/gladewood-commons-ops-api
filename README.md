@@ -161,6 +161,12 @@ Segments (`segment` on a campaign) accept only `contact_kind`, `company_kind`, `
 
 Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` job emails each staff member their due and overdue list. Provider setup is in `docs/EMAIL_SETUP.md`.
 
+## Dashboard and saved views (items 10 and 2)
+
+`GET /api/dashboard?days=30` returns one payload for the staff app home: resident inquiries in the window by source (contact source: web, whatsapp, referral, phone, email, other), the resident funnel (deals that reached each stage in the window, open now, median days in stage), conversion (inquiries, moved in, closed without move-in, rate), overdue deals and activities, referral partners quiet for 30 days, channel volume (WhatsApp in and out, emails sent, opened, bounced), and the demand target (`demand_target` in financials, default 6) against open deals at Deposit received or Confirmed.
+
+`GET/POST /api/views`, `PUT/DELETE /api/views/{id}`: named filter sets per list screen (`contacts`, `companies`, `deals`, `activities`). Filters are allowlisted per entity (`VIEW_FILTER_KEYS` in `app/schemas_crm.py`); any other key is a `422`. Views are shared by default; a private view is visible only to its owner. Owners and admins edit or delete.
+
 ## Migrations
 
 `alembic/versions/0001_baseline.py` adopts the existing production tables with `CREATE TABLE IF NOT EXISTS` and adds `users` and `audit_log`. Render runs `alembic upgrade head` before each deploy (`preDeployCommand` in `render.yaml`). New schema changes go in new revisions: `alembic revision -m "describe change"`.

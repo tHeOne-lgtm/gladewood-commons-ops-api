@@ -409,3 +409,20 @@ class Email(Base):
     bounced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class SavedView(Base):
+    """A named filter set for a list screen. Filters are a flat dict of the screen's query params
+    (allowlisted per entity in the schema), never free text beyond the search box value."""
+    __tablename__ = "saved_views"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entity: Mapped[str] = mapped_column(String(16), index=True)  # contacts | companies | deals | activities
+    name: Mapped[str] = mapped_column(Text)
+    filters: Mapped[dict] = mapped_column(JSONType, default=dict)
+    sort: Mapped[str] = mapped_column(String(40), default="")
+    columns: Mapped[list] = mapped_column(JSONType, default=list)
+    owner_id: Mapped[str] = mapped_column(String(64), index=True)
+    shared: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

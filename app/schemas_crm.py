@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ExtraValue = str | int | float | bool | None
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -583,3 +583,73 @@ class CampaignReportOut(BaseModel):
     opened: int
     clicked: int
     unsubscribed_after: int
+
+
+# ---- Saved views and dashboard (item 2 and item 10) ----
+ViewEntity = Literal["contacts", "companies", "deals", "activities"]
+VIEW_FILTER_KEYS: dict[str, set[str]] = {
+    "contacts": {"q", "kind", "status", "company_id", "tag"},
+    "companies": {"q", "kind"},
+    "deals": {"pipeline_id", "stage_id", "status", "owner_id", "q", "mine", "overdue"},
+    "activities": {"mine", "open_only", "overdue", "kind"},
+}
+
+
+class SavedViewIn(BaseModel):
+    entity: ViewEntity
+    name: str = Field(min_length=1, max_length=80)
+    filters: dict[str, str | int | bool] = Field(default_factory=dict)
+    sort: str = Field("", max_length=40)
+    columns: list[str] = Field(default_factory=list, max_length=30)
+    shared: bool = True
+    position: int = 0
+
+    @model_validator(mode="after")
+    def _keys(self):
+        allowed = VIEW_FILTER_KEYS[self.entity]
+        bad = sorted(k for k in self.filters if k not in allowed)
+        if bad:
+            raise ValueError(f"Filters not allowed for {self.entity}: {', '.join(bad)}")
+        return self
+
+
+class SavedViewOut(SavedViewIn, _Out):
+    owner_id: str
+    mine: bool = True
+
+
+class SourceCount(BaseModel):
+    source: str
+    count: int
+
+
+class FunnelStage(BaseModel):
+    stage: str
+    reached: int
+    open_now: int
+    median_days_open: float | None = None
+
+
+class DashboardDeal(BaseModel):
+    id: int
+    title: str
+    pipeline: str
+    stage: str | None
+    next_action_at: date | None
+    days: int
+
+
+class DashboardOut(BaseModel):
+    days: int
+    since: datetime
+    inquiries_total: int
+    inquiries_by_source: list[SourceCount]
+    funnel: list[FunnelStage]
+    conversion: dict[str, float | int]
+    overdue_deals: int
+    overdue_deal_list: list[DashboardDeal]
+    overdue_activities: int
+    quiet_partners: int
+    quiet_partner_list: list[DashboardDeal]
+    channels: dict[str, int]
+    demand: dict[str, int]

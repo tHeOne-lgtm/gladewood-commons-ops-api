@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import Settings, get_settings
 from app.db import make_engine, normalize_database_url
 from app.routers import demand, financials, health, records, users
-from app.routers.crm import (activities, automations, campaigns, companies, consents, contacts, deals, decisions, email, forms, imports, messages, notes, pipelines, timeline, today)
+from app.routers.crm import (activities, automations, campaigns, companies, consents, contacts, dashboard, deals, decisions, email, forms, imports, messages, notes, pipelines, timeline, today, views)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -43,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(records.conflict_log)
     app.include_router(financials.router)
     app.include_router(demand.router)
-    for r in (companies, contacts, pipelines, deals, activities, notes, timeline, imports, today, decisions, consents, messages, forms, automations, email, campaigns):
+    for r in (companies, contacts, pipelines, deals, activities, notes, timeline, imports, today, decisions, consents, messages, forms, automations, email, campaigns, views, dashboard):
         app.include_router(r.router)
     app.include_router(email.webhooks)
     return app
