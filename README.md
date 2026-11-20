@@ -46,6 +46,7 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
 | `FORMS_WEBHOOK_SECRET` | For Netlify Forms | The JWS secret you type into the Netlify form notification; the API rejects unsigned deliveries to `/api/forms/netlify`. 32 or more random characters. |
 | `FORMS_RATE_LIMIT_PER_HOUR` | No | Default `10` submissions per IP per hour on the public form endpoints. |
+| `INTEGRATION_API_KEY` | For the Command Center sync | Machine credential sent as `X-Api-Key`; opens only `/api/integrations/*`. See `docs/COMMAND_CENTER_REPOINT.md`. |
 | `EMAIL_PROVIDER` | For email | `resend` (metrics through its webhook), `smtp` (Google Workspace relay, no metrics), or `log` (default; nothing leaves, rows are still written). |
 | `EMAIL_FROM` | For email | Sender, for example `Paul Selman <paul@gladewoodcommons.com>`. The domain must be verified at the provider. |
 | `EMAIL_REPLY_TO` | No | Reply-To address when different from the sender. |
@@ -168,6 +169,10 @@ Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` jo
 ## Bigin import (item 3)
 
 `POST /api/imports/bigin` (admin) takes Bigin's Accounts and Contacts exports (CSV or the API's JSON), dry run by default, and writes one undoable import batch. `python -m app.cli import-bigin` does the same from a shell. What is imported, how rows are matched, and the cutover steps: `docs/BIGIN_IMPORT.md`.
+
+## Command Center sync (machine credential)
+
+`GET /api/integrations/bigin-accounts` and `POST /api/integrations/bigin-accounts/upsert` speak Bigin's Accounts shape so the Command Center page and its Make scenario (n8n next) only change URL and auth. Header `X-Api-Key` = `INTEGRATION_API_KEY`. Details and the cutover record: `docs/COMMAND_CENTER_REPOINT.md`.
 
 ## Dashboard and saved views (items 10 and 2)
 

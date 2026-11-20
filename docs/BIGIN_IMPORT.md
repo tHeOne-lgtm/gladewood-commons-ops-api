@@ -21,7 +21,7 @@
 2. **Dry run.** Staff app, Imports page, choose both files, Preview. The report shows how many companies and contacts would be created, matched, or skipped, and why. Fix anything surprising in the files first.
 3. **Apply.** Same page, Import. The batch appears in the list with an Undo button.
 4. **Check.** Contacts filtered by tag `src-bigin` should number 120 (121 minus the forwarding address). Companies list should show 130 plus any that already existed.
-5. **Cutover.** Repoint the Command Center's Make scenario from the Bigin upsert to `POST /api/contacts` and `POST /api/companies` on this API (bearer token from a staff account), freeze Bigin to read-only, keep the export files for 30 days, then cancel the subscription.
+5. **Cutover.** Done 2026-11-20 for the Make scenario (see `docs/COMMAND_CENTER_REPOINT.md`): the push and pull now hit `/api/integrations/bigin-accounts` with the `X-Api-Key` credential. Remaining: freeze Bigin to read-only, keep the export files for 30 days, then cancel the subscription.
 
 Command line alternative, against the Render database:
 
