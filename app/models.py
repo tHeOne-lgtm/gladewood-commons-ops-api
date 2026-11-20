@@ -348,3 +348,64 @@ class AutomationRun(Base):
     entity_id: Mapped[int] = mapped_column(Integer, index=True)
     ran_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     details: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+
+
+class EmailTemplate(Base):
+    """Merge-field email text. Templates never carry protected-trait language (checked on save)."""
+    __tablename__ = "email_templates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True)
+    kind: Mapped[str] = mapped_column(String(16), default="transactional")  # transactional | campaign
+    audience: Mapped[str] = mapped_column(String(16), default="any")          # resident | partner | owner | any
+    subject: Mapped[str] = mapped_column(Text)
+    body_text: Mapped[str] = mapped_column(Text)
+    body_html: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class Campaign(Base):
+    """A mass send to a segment. The segment holds only source, kind, tag, stage, and company-kind
+    filters (schema-enforced), never free text or extra fields."""
+    __tablename__ = "campaigns"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    template_id: Mapped[int] = mapped_column(ForeignKey("email_templates.id"))
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|scheduled|sending|sent|cancelled
+    segment: Mapped[dict] = mapped_column(JSONType, default=dict)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    template = relationship("EmailTemplate", lazy="joined")
+
+
+class Email(Base):
+    """One outbound email, 1:1 or one campaign recipient. Skipped recipients get a row too, with the
+    reason, so a campaign report accounts for everyone in the segment."""
+    __tablename__ = "emails"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    campaign_id: Mapped[int | None] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=True, index=True)
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True)
+    to_email: Mapped[str] = mapped_column(Text, index=True)
+    subject: Mapped[str] = mapped_column(Text, default="")
+    body_text: Mapped[str] = mapped_column(Text, default="")
+    provider: Mapped[str] = mapped_column(String(16), default="log")
+    provider_message_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|sent|delivered|bounced|complained|failed|skipped
+    skip_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    clicked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bounced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)

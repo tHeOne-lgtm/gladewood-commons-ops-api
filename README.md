@@ -46,6 +46,13 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
 | `FORMS_WEBHOOK_SECRET` | For Netlify Forms | The JWS secret you type into the Netlify form notification; the API rejects unsigned deliveries to `/api/forms/netlify`. 32 or more random characters. |
 | `FORMS_RATE_LIMIT_PER_HOUR` | No | Default `10` submissions per IP per hour on the public form endpoints. |
+| `EMAIL_PROVIDER` | For email | `resend` (metrics through its webhook), `smtp` (Google Workspace relay, no metrics), or `log` (default; nothing leaves, rows are still written). |
+| `EMAIL_FROM` | For email | Sender, for example `Paul Selman <paul@gladewoodcommons.com>`. The domain must be verified at the provider. |
+| `EMAIL_REPLY_TO` | No | Reply-To address when different from the sender. |
+| `EMAIL_POSTAL_ADDRESS` | For email | Physical postal address printed in every footer (CAN-SPAM). Campaigns refuse to send without it. |
+| `EMAIL_UNSUBSCRIBE_SECRET` | For email | Signs unsubscribe links; 32 or more random characters. |
+| `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` | With `resend` | API key with sending access; the `whsec_...` secret shown when the webhook is created. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | With `smtp` | STARTTLS relay. |
 
 Copy `.env.example` to `.env` for local work. Never commit `.env`.
 
@@ -130,6 +137,29 @@ Five hard-coded rules in `app/automations.py` run every 15 minutes from the Rend
 | `partner_checkin` | Partner deal with no update or activity for 30 days | Task "Check in with partner" due in 2 days, at most once per 30 days |
 
 `GET /api/automations/rules` lists the rules with the last time each fired. The 7 am email digest waits for the email phase.
+
+## Email templates, 1:1 send, campaigns, digest (Phase 2c, items 9 and 10)
+
+`app/emailing.py` renders `{{merge_field}}` templates (`first_name`, `display_name`, `email`, `company_name`, `deal_title`, `stage_name`, `next_action_at`, `room_preference`, `move_in_target`, `sender_name`, `unsubscribe_url`), appends the footer (postal address, Equal Housing Opportunity line, unsubscribe link) to every message, and sends through `app/email_provider.py`. Templates and ad hoc bodies are refused when they contain a protected-trait term from `app/fair_housing.py` or an unknown merge field. Five starter templates are seeded by migration 0008 (`seed-email-templates` adds any that are missing).
+
+Consent gate: a marketing send (`marketing=true` or any campaign) needs an active `email` consent. A transactional send needs only that the contact has an email, is active, has not unsubscribed, and has not bounced. Every send, including skipped ones, is a row in `emails` and an `email.out` item on the contact and deal timelines.
+
+| Route | What |
+|---|---|
+| `GET/POST /api/email/templates`, `GET/PUT /api/email/templates/{id}` | Templates (`include_inactive=true` to list retired ones) |
+| `POST /api/email/preview` | Rendered subject, text, and HTML for a template or ad hoc body against a contact or deal, with the skip reason if it could not send |
+| `POST /api/email/send` | 1:1 send; `409` with `skip_reason` when gated, `502` when the provider refuses |
+| `GET /api/email/log` | Sends by contact, deal, or campaign |
+| `GET/POST /api/email/unsubscribe/{token}` | Public; withdraws email consent. Also the RFC 8058 one-click target in the `List-Unsubscribe` headers |
+| `POST /api/webhooks/resend` | Resend events (Svix signature): delivered, opened, clicked, bounced, complained. A bounce blocks future sends; a complaint also withdraws consent |
+| `GET/POST /api/campaigns`, `GET/PUT /api/campaigns/{id}`, `POST .../cancel` | Campaigns; `scheduled_at` makes the cron send it |
+| `POST /api/campaigns/{id}/preview` | Recipient count, skip reasons, sample, rendered copy |
+| `POST /api/campaigns/{id}/send` | Sends now; a rerun after a crash never sends a recipient twice |
+| `GET /api/campaigns/{id}/report` | Counts by status, opens, clicks, unsubscribes since the send |
+
+Segments (`segment` on a campaign) accept only `contact_kind`, `company_kind`, `source`, `tags_any`, `tags_none`, `pipeline`, `stages`, `deal_status`, and `contact_ids`; any other key is a `422`. That keeps health, disability, and benefit details out of targeting by construction.
+
+Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` job emails each staff member their due and overdue list. Provider setup is in `docs/EMAIL_SETUP.md`.
 
 ## Migrations
 

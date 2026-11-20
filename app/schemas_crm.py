@@ -460,3 +460,126 @@ class AutomationReport(BaseModel):
     ran_at: datetime
     actions: list[AutomationAction]
     counts: dict[str, int]
+
+
+# ---- Email (Phase 2c) ----
+TemplateKind = Literal["transactional", "campaign"]
+Audience = Literal["resident", "partner", "owner", "any"]
+
+
+class EmailTemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: TemplateKind = "transactional"
+    audience: Audience = "any"
+    subject: str = Field(min_length=1, max_length=200)
+    body_text: str = Field(min_length=1, max_length=20000)
+    body_html: str = Field("", max_length=60000)
+    is_active: bool = True
+
+
+class EmailTemplateOut(EmailTemplateIn, _Out):
+    created_by: str | None = None
+
+
+class EmailPreviewIn(BaseModel):
+    template_id: int | None = None
+    subject: str | None = None
+    body_text: str | None = None
+    contact_id: int | None = None
+    deal_id: int | None = None
+
+
+class EmailPreviewOut(BaseModel):
+    to_email: str
+    subject: str
+    body_text: str
+    body_html: str
+    can_send: bool
+    skip_reason: str | None = None
+    protected_terms: list[str] = []
+
+
+class SendEmailIn(BaseModel):
+    contact_id: int
+    deal_id: int | None = None
+    template_id: int | None = None
+    subject: str | None = Field(None, max_length=200)
+    body_text: str | None = Field(None, max_length=20000)
+    marketing: bool = False  # True requires active email consent, as a campaign does
+
+
+class EmailOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    contact_id: int | None
+    deal_id: int | None
+    campaign_id: int | None
+    template_id: int | None
+    to_email: str
+    subject: str
+    status: str
+    skip_reason: str | None
+    error: str | None
+    sent_by: str | None
+    sent_at: datetime | None
+    delivered_at: datetime | None
+    opened_at: datetime | None
+    clicked_at: datetime | None
+    bounced_at: datetime | None
+    created_at: datetime
+
+
+class Segment(BaseModel):
+    """Who a campaign goes to. Keys are fixed on purpose: segments are built from source, kind,
+    tag, stage, and company kind only, never from notes, extra fields, or anything health-related."""
+    model_config = ConfigDict(extra="forbid")
+    contact_kind: list[ContactKind] = []
+    company_kind: list[CompanyKind] = []
+    source: list[str] = Field(default_factory=list, max_length=20)
+    tags_any: list[str] = Field(default_factory=list, max_length=20)
+    tags_none: list[str] = Field(default_factory=list, max_length=20)
+    pipeline: str | None = None
+    stages: list[str] = Field(default_factory=list, max_length=20)
+    deal_status: Literal["open", "won", "lost", "any"] = "any"
+    contact_ids: list[int] = Field(default_factory=list, max_length=500)
+
+
+class CampaignIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    template_id: int
+    segment: Segment = Field(default_factory=Segment)
+    scheduled_at: datetime | None = None
+
+
+class CampaignOut(CampaignIn, _Out):
+    status: str
+    started_at: datetime | None = None
+    sent_at: datetime | None = None
+    created_by: str | None = None
+    template_name: str | None = None
+
+
+class CampaignRecipientPreview(BaseModel):
+    contact_id: int
+    display_name: str
+    email: str
+    skip_reason: str | None = None
+
+
+class CampaignPreviewOut(BaseModel):
+    campaign_id: int
+    total: int
+    sendable: int
+    skipped: dict[str, int]
+    sample: list[CampaignRecipientPreview]
+    subject: str
+    body_text: str
+
+
+class CampaignReportOut(BaseModel):
+    campaign_id: int
+    status: str
+    counts: dict[str, int]
+    opened: int
+    clicked: int
+    unsubscribed_after: int

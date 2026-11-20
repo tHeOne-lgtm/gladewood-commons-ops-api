@@ -27,6 +27,20 @@ class Settings(BaseSettings):
     # Public web forms (Phase 2b, item 7). The Netlify outgoing-webhook secret signs form submissions.
     forms_webhook_secret: str = ""
     forms_rate_limit_per_hour: int = 10
+    # Email (Phase 2c, items 9 and 10). Provider "resend" (campaign metrics), "smtp" (Google Workspace,
+    # no metrics), or "log" (nothing leaves; rows are still written). Every send carries the postal
+    # address and an unsubscribe link, so email_postal_address is required before the first send.
+    email_provider: str = "log"
+    email_from: str = "Gladewood Commons <hello@gladewoodcommons.com>"
+    email_reply_to: str = ""
+    email_postal_address: str = ""
+    email_unsubscribe_secret: str = ""
+    resend_api_key: str = ""
+    resend_webhook_secret: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
     db_pool_size: int = 5
     db_max_overflow: int = 5
     db_pool_recycle_seconds: int = 1800
