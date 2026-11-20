@@ -48,8 +48,12 @@ def test_stuck_deals_notes_and_keyword_scan(client, db, staff_headers, pipelines
     p = pipelines["property"]
     quiet = client.post("/api/deals", json={"title": "12 Pine St", "pipeline_id": p.id, "next_action_at": "2026-12-01"}, headers=staff_headers).json()
     fresh = client.post("/api/deals", json={"title": "9 Oak Ave", "pipeline_id": p.id, "next_action_at": "2026-12-01"}, headers=staff_headers).json()
-    from app.models import Deal
-    db.get(Deal, quiet["id"]).created_at = datetime.now(timezone.utc) - timedelta(days=20)
+    from sqlalchemy import select as sel
+    from app.models import Deal, DealStageHistory
+    old = datetime.now(timezone.utc) - timedelta(days=20)
+    db.get(Deal, quiet["id"]).created_at = old
+    for h in db.scalars(sel(DealStageHistory).where(DealStageHistory.deal_id == quiet["id"])).all():
+        h.at = old  # the stage-history row written at creation is a touch too
     db.commit()
     out = client.get("/api/integrations/stuck-deals?days=14", headers=KEY).json()
     assert out["count"] == 1 and out["deals"][0]["deal_id"] == quiet["id"] and out["deals"][0]["days_quiet"] >= 20
@@ -64,7 +68,8 @@ def test_stuck_deals_notes_and_keyword_scan(client, db, staff_headers, pipelines
     assert client.post("/api/integrations/notes", json={"entity": "deal", "entity_id": 999, "body": "x"}, headers=KEY).status_code == 404
     # keyword scan reports counts only
     client.post("/api/notes", json={"entity": "deal", "entity_id": fresh["id"], "body": "Owner prefers a longer term"}, headers=staff_headers)
-    client.put(f"/api/deals/{fresh['id']}", json={**{k: v for k, v in fresh.items() if k in ("title", "pipeline_id", "stage_id", "contact_id", "company_id", "property_id", "amount", "expected_close", "next_action_at", "owner_id", "extra")}, "lost_reason": "wheelchair"}, headers=staff_headers)
+    db.get(Deal, fresh["id"]).lost_reason = "wheelchair"  # a stored reason that should never have passed the guard
+    db.commit()
     scan = client.get("/api/integrations/keyword-scan", headers=KEY).json()
     assert scan["fields"]["notes"]["scanned"] == 2 and scan["fields"]["notes"]["flagged"] == 0
     assert scan["fields"]["deal_lost_reasons"] == {"scanned": 1, "flagged": 1} and scan["flagged_total"] == 1

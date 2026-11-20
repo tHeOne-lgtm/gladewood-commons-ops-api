@@ -1,4 +1,6 @@
 """Chronological view of everything that happened to one record."""
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -53,5 +55,5 @@ def timeline(entity: str, entity_id: int, limit: int = Query(200, ge=1, le=1000)
         for d in db.scalars(select(Deal).where(or_(Deal.contact_id == entity_id))).all():
             items.append(TimelineItem(at=d.created_at, type="deal", summary=d.title, ref_id=d.id,
                                       details={"status": d.status, "stage": d.stage.name if d.stage else None}))
-    items.sort(key=lambda i: i.at, reverse=True)
+    items.sort(key=lambda i: i.at if i.at.tzinfo else i.at.replace(tzinfo=timezone.utc), reverse=True)
     return items[:limit]
