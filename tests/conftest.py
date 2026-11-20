@@ -58,6 +58,12 @@ def settings():
         supabase_jwt_secret=TEST_SECRET,
         cors_origins=ALLOWED_ORIGIN,
         bootstrap_admin_emails=ADMIN_EMAIL,
+        twilio_account_sid="ACtest",
+        twilio_auth_token="twilio-test-token",
+        twilio_whatsapp_from="+15550001111",
+        public_base_url="http://testserver",
+        email_provider="resend", resend_api_key="re_test", resend_webhook_secret="whsec_dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdA==",
+        email_postal_address="PO Box 1, Chattanooga, TN 37401", email_unsubscribe_secret="unsub-secret-for-tests-32-bytes-long",
     )
 
 

@@ -22,6 +22,9 @@ def test_deal_create_move_win_and_summary(client, db, staff_headers, staff_user,
     assert r.status_code == 201
     d = r.json()
     assert d["stage_name"] == "Inquiry" and d["status"] == "open" and d["owner_id"] == staff_user.id
+    assert d["contact_name"] == "Resident A" and d["stage_entered_at"]
+    listed = client.get("/api/deals", params={"pipeline_id": p.id}, headers=staff_headers).json()
+    assert listed[0]["contact_name"] == "Resident A" and listed[0]["company_name"] is None
     did = d["id"]
 
     r = client.post(f"/api/deals/{did}/move", json={"stage_id": _stage(p, "Deposit received").id}, headers=staff_headers)

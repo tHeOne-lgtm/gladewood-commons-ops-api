@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ExtraValue = str | int | float | bool | None
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
@@ -162,6 +162,10 @@ class DealOut(DealIn, _Out):
     status: str
     closed_at: datetime | None = None
     stage_name: str | None = None
+    contact_name: str | None = None
+    company_name: str | None = None
+    property_address: str | None = None
+    stage_entered_at: datetime | None = None
     import_batch_id: int | None = None
 
 
@@ -312,8 +316,8 @@ class MigrationReport(BaseModel):
 # --- comparison item 5: decision log and consents ---------------------------------------
 DecisionEntity = Literal["deal", "contact"]
 DecisionOutcome = Literal["approved", "declined", "withdrawn"]
-ConsentType = Literal["sms", "email", "calls", "portal", "partner_sharing"]
-ConsentSource = Literal["form", "email", "phone", "in_person", "import"]
+ConsentType = Literal["sms", "whatsapp", "email", "calls", "portal", "partner_sharing"]
+ConsentSource = Literal["form", "email", "phone", "in_person", "import", "whatsapp"]
 
 
 class DecisionIn(BaseModel):
@@ -363,3 +367,289 @@ class ConsentOut(BaseModel):
     recorded_by: str | None
     withdrawn_by: str | None
     active: bool = False
+
+
+class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    channel: str
+    direction: str
+    contact_id: int | None
+    deal_id: int | None
+    phone: str
+    body: str
+    status: str
+    error_code: str | None
+    media_count: int
+    sent_by: str | None
+    read_at: datetime | None
+    created_at: datetime
+
+
+class ConversationOut(BaseModel):
+    phone: str
+    contact_id: int | None
+    contact_name: str | None
+    consent_active: bool
+    window_open: bool
+    unread_count: int
+    last_message: MessageOut
+
+
+class SendMessageIn(BaseModel):
+    contact_id: int | None = None
+    phone: str | None = None
+    body: str = Field(min_length=1, max_length=1600)
+    allow_outside_window: bool = False
+
+
+class InquiryFormIn(BaseModel):
+    """Public tour or room inquiry. Operational fields only; the form must not ask for health,
+    disability, or benefit details, and nothing here stores them."""
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=40)
+    message: str = Field("", max_length=2000)
+    room_preference: str = Field("", max_length=40)
+    move_in_target: str = Field("", max_length=40)
+    contact_ok: bool = False
+    page: str = Field("", max_length=200)
+    website: str = Field("", max_length=200)  # honeypot; must stay empty
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ReferralFormIn(BaseModel):
+    """Public referral-partner inquiry from a case manager, coordinator, or employer."""
+    name: str = Field(min_length=1, max_length=120)
+    organization: str = Field(min_length=1, max_length=200)
+    organization_type: str = Field("agency", max_length=32)
+    role: str = Field("", max_length=120)
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=40)
+    message: str = Field("", max_length=2000)
+    page: str = Field("", max_length=200)
+    website: str = Field("", max_length=200)  # honeypot
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class FormResult(BaseModel):
+    ok: bool = True
+    contact_id: int
+    deal_id: int | None
+    created_contact: bool
+
+
+class AutomationAction(BaseModel):
+    rule: str
+    entity: str
+    entity_id: int
+    action: str
+    detail: str = ""
+
+
+class AutomationReport(BaseModel):
+    dry_run: bool
+    ran_at: datetime
+    actions: list[AutomationAction]
+    counts: dict[str, int]
+
+
+# ---- Email (Phase 2c) ----
+TemplateKind = Literal["transactional", "campaign"]
+Audience = Literal["resident", "partner", "owner", "any"]
+
+
+class EmailTemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: TemplateKind = "transactional"
+    audience: Audience = "any"
+    subject: str = Field(min_length=1, max_length=200)
+    body_text: str = Field(min_length=1, max_length=20000)
+    body_html: str = Field("", max_length=60000)
+    is_active: bool = True
+
+
+class EmailTemplateOut(EmailTemplateIn, _Out):
+    created_by: str | None = None
+
+
+class EmailPreviewIn(BaseModel):
+    template_id: int | None = None
+    subject: str | None = None
+    body_text: str | None = None
+    contact_id: int | None = None
+    deal_id: int | None = None
+
+
+class EmailPreviewOut(BaseModel):
+    to_email: str
+    subject: str
+    body_text: str
+    body_html: str
+    can_send: bool
+    skip_reason: str | None = None
+    protected_terms: list[str] = []
+
+
+class SendEmailIn(BaseModel):
+    contact_id: int
+    deal_id: int | None = None
+    template_id: int | None = None
+    subject: str | None = Field(None, max_length=200)
+    body_text: str | None = Field(None, max_length=20000)
+    marketing: bool = False  # True requires active email consent, as a campaign does
+
+
+class EmailOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    contact_id: int | None
+    deal_id: int | None
+    campaign_id: int | None
+    template_id: int | None
+    to_email: str
+    subject: str
+    status: str
+    skip_reason: str | None
+    error: str | None
+    sent_by: str | None
+    sent_at: datetime | None
+    delivered_at: datetime | None
+    opened_at: datetime | None
+    clicked_at: datetime | None
+    bounced_at: datetime | None
+    created_at: datetime
+
+
+class Segment(BaseModel):
+    """Who a campaign goes to. Keys are fixed on purpose: segments are built from source, kind,
+    tag, stage, and company kind only, never from notes, extra fields, or anything health-related."""
+    model_config = ConfigDict(extra="forbid")
+    contact_kind: list[ContactKind] = []
+    company_kind: list[CompanyKind] = []
+    source: list[str] = Field(default_factory=list, max_length=20)
+    tags_any: list[str] = Field(default_factory=list, max_length=20)
+    tags_none: list[str] = Field(default_factory=list, max_length=20)
+    pipeline: str | None = None
+    stages: list[str] = Field(default_factory=list, max_length=20)
+    deal_status: Literal["open", "won", "lost", "any"] = "any"
+    contact_ids: list[int] = Field(default_factory=list, max_length=500)
+
+
+class CampaignIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    template_id: int
+    segment: Segment = Field(default_factory=Segment)
+    scheduled_at: datetime | None = None
+
+
+class CampaignOut(CampaignIn, _Out):
+    status: str
+    started_at: datetime | None = None
+    sent_at: datetime | None = None
+    created_by: str | None = None
+    template_name: str | None = None
+
+
+class CampaignRecipientPreview(BaseModel):
+    contact_id: int
+    display_name: str
+    email: str
+    skip_reason: str | None = None
+
+
+class CampaignPreviewOut(BaseModel):
+    campaign_id: int
+    total: int
+    sendable: int
+    skipped: dict[str, int]
+    sample: list[CampaignRecipientPreview]
+    subject: str
+    body_text: str
+
+
+class CampaignReportOut(BaseModel):
+    campaign_id: int
+    status: str
+    counts: dict[str, int]
+    opened: int
+    clicked: int
+    unsubscribed_after: int
+
+
+# ---- Saved views and dashboard (item 2 and item 10) ----
+ViewEntity = Literal["contacts", "companies", "deals", "activities"]
+VIEW_FILTER_KEYS: dict[str, set[str]] = {
+    "contacts": {"q", "kind", "status", "company_id", "tag"},
+    "companies": {"q", "kind"},
+    "deals": {"pipeline_id", "stage_id", "status", "owner_id", "q", "mine", "overdue"},
+    "activities": {"mine", "open_only", "overdue", "kind"},
+}
+
+
+class SavedViewIn(BaseModel):
+    entity: ViewEntity
+    name: str = Field(min_length=1, max_length=80)
+    filters: dict[str, str | int | bool] = Field(default_factory=dict)
+    sort: str = Field("", max_length=40)
+    columns: list[str] = Field(default_factory=list, max_length=30)
+    shared: bool = True
+    position: int = 0
+
+    @model_validator(mode="after")
+    def _keys(self):
+        allowed = VIEW_FILTER_KEYS[self.entity]
+        bad = sorted(k for k in self.filters if k not in allowed)
+        if bad:
+            raise ValueError(f"Filters not allowed for {self.entity}: {', '.join(bad)}")
+        return self
+
+
+class SavedViewOut(SavedViewIn, _Out):
+    owner_id: str
+    mine: bool = True
+
+
+class SourceCount(BaseModel):
+    source: str
+    count: int
+
+
+class FunnelStage(BaseModel):
+    stage: str
+    reached: int
+    open_now: int
+    median_days_open: float | None = None
+
+
+class DashboardDeal(BaseModel):
+    id: int
+    title: str
+    pipeline: str
+    stage: str | None
+    next_action_at: date | None
+    days: int
+
+
+class DashboardOut(BaseModel):
+    days: int
+    since: datetime
+    inquiries_total: int
+    inquiries_by_source: list[SourceCount]
+    funnel: list[FunnelStage]
+    conversion: dict[str, float | int]
+    overdue_deals: int
+    overdue_deal_list: list[DashboardDeal]
+    overdue_activities: int
+    quiet_partners: int
+    quiet_partner_list: list[DashboardDeal]
+    channels: dict[str, int]
+    demand: dict[str, int]

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
@@ -17,10 +17,34 @@ CSV_FIELDS = ["id", "title", "pipeline_id", "stage_id", "stage_name", "status", 
               "import_batch_id", "created_at"]
 
 
-def _out(row: Deal) -> DealOut:
-    o = DealOut.model_validate(row)
-    o.stage_name = row.stage.name if row.stage else None
-    return o
+def _entered(db: Session, deal_ids: list[int]) -> dict[int, object]:
+    if not deal_ids:
+        return {}
+    rows = db.execute(select(DealStageHistory.deal_id, func.max(DealStageHistory.at))
+                      .where(DealStageHistory.deal_id.in_(deal_ids)).group_by(DealStageHistory.deal_id)).all()
+    return {r[0]: r[1] for r in rows}
+
+
+def _outs(db: Session, rows: list[Deal]) -> list[DealOut]:
+    entered = _entered(db, [r.id for r in rows])
+    out = []
+    for row in rows:
+        o = DealOut.model_validate(row)
+        o.stage_name = row.stage.name if row.stage else None
+        o.contact_name = row.contact.display_name if row.contact else None
+        o.company_name = row.company.name if row.company else None
+        o.property_address = row.property.address if row.property else None
+        o.stage_entered_at = entered.get(row.id) or row.created_at
+        out.append(o)
+    return out
+
+
+def _out(row: Deal, db: Session | None = None) -> DealOut:
+    if db is None:
+        o = DealOut.model_validate(row)
+        o.stage_name = row.stage.name if row.stage else None
+        return o
+    return _outs(db, [row])[0]
 
 
 def _stage_for(db: Session, pipeline_id: int, stage_id: int | None) -> PipelineStage:
@@ -86,7 +110,7 @@ def list_deals(pipeline_id: int | None = None, stage_id: int | None = None, stat
                db: Session = Depends(get_db), _: User = Depends(require_staff)):
     rows = db.scalars(_query(pipeline_id, stage_id, status, contact_id, company_id, property_id,
                              owner_id, q).limit(limit).offset(offset)).all()
-    return [_out(r) for r in rows]
+    return _outs(db, list(rows))
 
 
 @router.get("/export")
@@ -99,7 +123,7 @@ def export_deals(pipeline_id: int | None = None, db: Session = Depends(get_db), 
 
 @router.get("/{row_id}", response_model=DealOut)
 def get_deal(row_id: int, db: Session = Depends(get_db), _: User = Depends(require_staff)):
-    return _out(get_or_404(db, Deal, row_id, "Deal"))
+    return _out(get_or_404(db, Deal, row_id, "Deal"), db)
 
 
 @router.post("", response_model=DealOut, status_code=201)
@@ -116,7 +140,7 @@ def create_deal(item: DealIn, db: Session = Depends(get_db), user: User = Depend
     write_audit(db, actor=user, action="deal.create", entity="deal", entity_id=row.id, details=snapshot(row, FIELDS))
     db.commit()
     db.refresh(row)
-    return _out(row)
+    return _out(row, db)
 
 
 @router.put("/{row_id}", response_model=DealOut)
@@ -141,7 +165,7 @@ def update_deal(row_id: int, item: DealIn, db: Session = Depends(get_db), user: 
                 details={"changes": diff(before, snapshot(row, FIELDS))})
     db.commit()
     db.refresh(row)
-    return _out(row)
+    return _out(row, db)
 
 
 @router.post("/{row_id}/move", response_model=DealOut)
@@ -149,7 +173,7 @@ def move_deal(row_id: int, payload: DealMove, db: Session = Depends(get_db), use
     row = get_or_404(db, Deal, row_id, "Deal")
     stage = _stage_for(db, row.pipeline_id, payload.stage_id)
     if stage.id == row.stage_id:
-        return _out(row)
+        return _out(row, db)
     owner_id = row.owner_id or user.id
     next_action_at = payload.next_action_at or row.next_action_at
     _require_open_fields(stage, owner_id, next_action_at)
@@ -162,7 +186,7 @@ def move_deal(row_id: int, payload: DealMove, db: Session = Depends(get_db), use
                 details={"changes": {"stage": [from_name, stage.name]}, "status": row.status})
     db.commit()
     db.refresh(row)
-    return _out(row)
+    return _out(row, db)
 
 
 @router.delete("/{row_id}", response_model=DeleteResult)

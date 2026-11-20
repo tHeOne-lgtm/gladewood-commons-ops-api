@@ -40,6 +40,19 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `BOOTSTRAP_ADMIN_EMAILS` | First deploy | Emails that receive the `admin` role on their first login. Remove after the first admin exists. |
 | `REQUIRE_STAFF_MFA` | No (default `false`) | When `true`, `admin` and `staff` tokens must carry Supabase's `aal` claim at `aal2` (an authenticator code was entered this session). `GET /api/me` still answers and reports `mfa_required` so a page can prompt for the code. Turn on only after every staff account has enrolled a TOTP factor. |
 | `ENV` | No | `development`, `test`, or `production`. |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | For WhatsApp | From the Twilio console. The auth token also validates incoming webhooks. |
+| `TWILIO_WHATSAPP_FROM` | For WhatsApp | The WhatsApp sender in E.164, for example `+14155238886`. |
+| `PUBLIC_BASE_URL` | For WhatsApp | `https://gladewood-commons-ops-api.onrender.com`; used to validate Twilio signatures and as the status callback. |
+| `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
+| `FORMS_WEBHOOK_SECRET` | For Netlify Forms | The JWS secret you type into the Netlify form notification; the API rejects unsigned deliveries to `/api/forms/netlify`. 32 or more random characters. |
+| `FORMS_RATE_LIMIT_PER_HOUR` | No | Default `10` submissions per IP per hour on the public form endpoints. |
+| `EMAIL_PROVIDER` | For email | `resend` (metrics through its webhook), `smtp` (Google Workspace relay, no metrics), or `log` (default; nothing leaves, rows are still written). |
+| `EMAIL_FROM` | For email | Sender, for example `Paul Selman <paul@gladewoodcommons.com>`. The domain must be verified at the provider. |
+| `EMAIL_REPLY_TO` | No | Reply-To address when different from the sender. |
+| `EMAIL_POSTAL_ADDRESS` | For email | Physical postal address printed in every footer (CAN-SPAM). Campaigns refuse to send without it. |
+| `EMAIL_UNSUBSCRIBE_SECRET` | For email | Signs unsubscribe links; 32 or more random characters. |
+| `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` | With `resend` | API key with sending access; the `whsec_...` secret shown when the webhook is created. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | With `smtp` | STARTTLS relay. |
 
 Copy `.env.example` to `.env` for local work. Never commit `.env`.
 
@@ -102,6 +115,57 @@ python -m app.cli migrate-legacy --apply --allow-partial --actor <your user id>
 ```
 
 Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline; residents become `resident` contacts; properties become deals in the Property pipeline linked by `property_id`. Money and date text is parsed and unparseable values are rejected. Re-running skips rows already migrated (`legacy_ref`). The legacy tables are left in place. `--actor` is required with `--apply`: that user becomes the owner of every open deal, the apply date becomes each open deal's first `next_action_at`, and the run is recorded as an import batch that an admin can undo with `POST /api/imports/{id}/undo`.
+
+## WhatsApp (Twilio)
+
+Point the Twilio WhatsApp sender's inbound webhook at `POST /api/webhooks/twilio/whatsapp` and its status callback at `POST /api/webhooks/twilio/status`, both on the public API URL. Every inbound message is signature-checked, matched to a contact by phone (or creates a `prospect` tagged `src-whatsapp`), records WhatsApp consent (a STOP keyword withdraws it), and opens a Resident inquiry deal when the contact has none open. Staff read and reply through `GET /api/conversations`, `GET /api/conversations/{phone}/messages`, `POST /api/conversations/{phone}/read`, and `POST /api/messages/whatsapp`. Replies outside the 24 hour window need `allow_outside_window` and an approved template on the Twilio side.
+
+## Web forms (Phase 2b, item 7)
+
+Two public endpoints take the marketing site's forms straight into the CRM, with no bearer token: `POST /api/forms/inquiry` (Tour Request, room inquiry) and `POST /api/forms/referral` (Referral Inquiry from a case manager, coordinator, or employer). Both accept JSON or form-encoded bodies, tolerate the usual field name variants (`full_name`, `tel`, `comments`, `first_name` plus `last_name`), drop any submission whose hidden `website` honeypot field is filled, and limit each IP to `FORMS_RATE_LIMIT_PER_HOUR`. A submission matches an existing contact by email, then by phone; otherwise it creates one (`source=web`, tag `src-web`). It leaves the message as a note, records email consent when the person opted in, opens a deal in the right pipeline when the contact has none open, and creates the first follow-up task. Netlify Forms can also deliver to `POST /api/forms/netlify`, which verifies Netlify's JWS signature with `FORMS_WEBHOOK_SECRET`. Setup for the marketing site is in `docs/FORMS_INTEGRATION.md`. Forms must not ask for health, disability, or benefit details; nothing in these endpoints stores them.
+
+## Automations (Phase 2b, item 6)
+
+Five hard-coded rules in `app/automations.py` run every 15 minutes from the Render cron job (`python -m app.cli run-automations`), and staff can run them on demand with `POST /api/automations/run` (`?dry_run=true` reports what would happen without writing). Each firing is recorded in `automation_runs`, so a rule never repeats itself for the same record, and in the audit log.
+
+| Rule | Trigger | Action |
+|---|---|---|
+| `inquiry_callback` | Resident deal at Inquiry with no open activity | Task "Call back new inquiry" due in 24 hours |
+| `tour_event` | Any deal at a stage named Tour scheduled with no event | Event on the deal's next action date at 3 pm UTC |
+| `stale_escalation` | Open deal whose next action is 5 or more days overdue | `escalation_flag` set on the deal plus a high priority task due in 4 hours; the flag clears on the next run after staff set a current next action |
+| `application_review` | Resident deal at Income verified | Task "Review application" due in 2 days |
+| `partner_checkin` | Partner deal with no update or activity for 30 days | Task "Check in with partner" due in 2 days, at most once per 30 days |
+
+`GET /api/automations/rules` lists the rules with the last time each fired. The 7 am email digest waits for the email phase.
+
+## Email templates, 1:1 send, campaigns, digest (Phase 2c, items 9 and 10)
+
+`app/emailing.py` renders `{{merge_field}}` templates (`first_name`, `display_name`, `email`, `company_name`, `deal_title`, `stage_name`, `next_action_at`, `room_preference`, `move_in_target`, `sender_name`, `unsubscribe_url`), appends the footer (postal address, Equal Housing Opportunity line, unsubscribe link) to every message, and sends through `app/email_provider.py`. Templates and ad hoc bodies are refused when they contain a protected-trait term from `app/fair_housing.py` or an unknown merge field. Five starter templates are seeded by migration 0008 (`seed-email-templates` adds any that are missing).
+
+Consent gate: a marketing send (`marketing=true` or any campaign) needs an active `email` consent. A transactional send needs only that the contact has an email, is active, has not unsubscribed, and has not bounced. Every send, including skipped ones, is a row in `emails` and an `email.out` item on the contact and deal timelines.
+
+| Route | What |
+|---|---|
+| `GET/POST /api/email/templates`, `GET/PUT /api/email/templates/{id}` | Templates (`include_inactive=true` to list retired ones) |
+| `POST /api/email/preview` | Rendered subject, text, and HTML for a template or ad hoc body against a contact or deal, with the skip reason if it could not send |
+| `POST /api/email/send` | 1:1 send; `409` with `skip_reason` when gated, `502` when the provider refuses |
+| `GET /api/email/log` | Sends by contact, deal, or campaign |
+| `GET/POST /api/email/unsubscribe/{token}` | Public; withdraws email consent. Also the RFC 8058 one-click target in the `List-Unsubscribe` headers |
+| `POST /api/webhooks/resend` | Resend events (Svix signature): delivered, opened, clicked, bounced, complained. A bounce blocks future sends; a complaint also withdraws consent |
+| `GET/POST /api/campaigns`, `GET/PUT /api/campaigns/{id}`, `POST .../cancel` | Campaigns; `scheduled_at` makes the cron send it |
+| `POST /api/campaigns/{id}/preview` | Recipient count, skip reasons, sample, rendered copy |
+| `POST /api/campaigns/{id}/send` | Sends now; a rerun after a crash never sends a recipient twice |
+| `GET /api/campaigns/{id}/report` | Counts by status, opens, clicks, unsubscribes since the send |
+
+Segments (`segment` on a campaign) accept only `contact_kind`, `company_kind`, `source`, `tags_any`, `tags_none`, `pipeline`, `stages`, `deal_status`, and `contact_ids`; any other key is a `422`. That keeps health, disability, and benefit details out of targeting by construction.
+
+Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` job emails each staff member their due and overdue list. Provider setup is in `docs/EMAIL_SETUP.md`.
+
+## Dashboard and saved views (items 10 and 2)
+
+`GET /api/dashboard?days=30` returns one payload for the staff app home: resident inquiries in the window by source (contact source: web, whatsapp, referral, phone, email, other), the resident funnel (deals that reached each stage in the window, open now, median days in stage), conversion (inquiries, moved in, closed without move-in, rate), overdue deals and activities, referral partners quiet for 30 days, channel volume (WhatsApp in and out, emails sent, opened, bounced), and the demand target (`demand_target` in financials, default 6) against open deals at Deposit received or Confirmed.
+
+`GET/POST /api/views`, `PUT/DELETE /api/views/{id}`: named filter sets per list screen (`contacts`, `companies`, `deals`, `activities`). Filters are allowlisted per entity (`VIEW_FILTER_KEYS` in `app/schemas_crm.py`); any other key is a `422`. Views are shared by default; a private view is visible only to its owner. Owners and admins edit or delete.
 
 ## Migrations
 

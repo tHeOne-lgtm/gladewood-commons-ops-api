@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Base, RecordTag, Tag
+from app.models import Base, RecordTag, Tag, User
 
 
 def get_or_404(db: Session, model: Type[Base], row_id: int, what: str = "Record") -> Base:
@@ -89,3 +89,10 @@ async def read_csv_upload(file: UploadFile, max_bytes: int = 5_000_000) -> list[
         raise HTTPException(status_code=422, detail="CSV must be UTF-8") from exc
     reader = csv.DictReader(io.StringIO(text))
     return [{(k or "").strip(): (v or "").strip() for k, v in row.items()} for row in reader]
+
+
+def automation_owner(db: Session) -> str | None:
+    """The user that owns records created by webhooks and rules: the first admin, else the first staff."""
+    u = db.scalar(select(User).where(User.role == "admin").order_by(User.created_at)) or \
+        db.scalar(select(User).where(User.role == "staff").order_by(User.created_at))
+    return u.id if u else None
