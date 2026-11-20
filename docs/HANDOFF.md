@@ -79,3 +79,5 @@ Scope per `docs/CRM_BOOKKEEPING_PORTAL_PLAN.md`: rule engine (trigger, condition
 - `docs/SETUP_WALKTHROUGH.md`: click-by-click setup (verified paths).
 - `docs/DASHBOARD_INTEGRATION.md`: the Command Center patch, what it changes, and the three defects found.
 - `docs/CRM_BOOKKEEPING_PORTAL_PLAN.md`, `docs/PLAN_ASSESSMENT.md`: plan, assessment, pricing comparison.
+
+- 2026-11-20 (Claude): Bigin top-10 complete and merged on both repositories. Command Center Sync (Make 6382382) re-pointed to `/api/integrations/*` with `INTEGRATION_API_KEY` (set on Render; same value in the Make HTTP modules). Render auto-deploy from GitHub is not firing; trigger deploys by hand or fix the GitHub connection. Open items for Paul: Bigin CSV export and import, Netlify form webhook, Twilio webhook URLs, email provider and postal address, n8n import of the sync workflow (keep Make on 7 days after), portal v1 gate decisions, Phase 3 payment decisions.
