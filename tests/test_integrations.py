@@ -41,3 +41,36 @@ def test_upsert_then_list_in_bigin_shape(client, db, staff_headers):
     assert out["info"] == {"count": 2, "more_records": False}
     r = client.post("/api/integrations/bigin-accounts/upsert", json={"data": []}, headers=KEY)
     assert r.status_code == 422
+
+
+def test_stuck_deals_notes_and_keyword_scan(client, db, staff_headers, pipelines):
+    from datetime import datetime, timedelta, timezone
+    p = pipelines["property"]
+    quiet = client.post("/api/deals", json={"title": "12 Pine St", "pipeline_id": p.id, "next_action_at": "2026-12-01"}, headers=staff_headers).json()
+    fresh = client.post("/api/deals", json={"title": "9 Oak Ave", "pipeline_id": p.id, "next_action_at": "2026-12-01"}, headers=staff_headers).json()
+    from sqlalchemy import select as sel
+    from app.models import Deal, DealStageHistory
+    old = datetime.now(timezone.utc) - timedelta(days=20)
+    db.get(Deal, quiet["id"]).created_at = old
+    for h in db.scalars(sel(DealStageHistory).where(DealStageHistory.deal_id == quiet["id"])).all():
+        h.at = old  # the stage-history row written at creation is a touch too
+    db.commit()
+    out = client.get("/api/integrations/stuck-deals?days=14", headers=KEY).json()
+    assert out["count"] == 1 and out["deals"][0]["deal_id"] == quiet["id"] and out["deals"][0]["days_quiet"] >= 20
+    assert out["deals"][0]["pipeline"] == "property"
+    # a note on the quiet deal counts as a touch
+    r = client.post("/api/integrations/notes", json={"entity": "deal", "entity_id": quiet["id"], "body": "Draft: follow up on the master lease terms."}, headers=KEY)
+    assert r.status_code == 201, r.text
+    assert client.get("/api/integrations/stuck-deals?days=14", headers=KEY).json()["count"] == 0
+    tl = client.get(f"/api/timeline?entity=deal&entity_id={quiet['id']}", headers=staff_headers).json()
+    assert any(i["type"] == "note" and i["actor"] == "command-center:n8n" for i in tl)
+    assert client.post("/api/integrations/notes", json={"entity": "deal", "entity_id": fresh["id"], "body": "needs supervision"}, headers=KEY).status_code == 422
+    assert client.post("/api/integrations/notes", json={"entity": "deal", "entity_id": 999, "body": "x"}, headers=KEY).status_code == 404
+    # keyword scan reports counts only
+    client.post("/api/notes", json={"entity": "deal", "entity_id": fresh["id"], "body": "Owner prefers a longer term"}, headers=staff_headers)
+    db.get(Deal, fresh["id"]).lost_reason = "wheelchair"  # a stored reason that should never have passed the guard
+    db.commit()
+    scan = client.get("/api/integrations/keyword-scan", headers=KEY).json()
+    assert scan["fields"]["notes"]["scanned"] == 2 and scan["fields"]["notes"]["flagged"] == 0
+    assert scan["fields"]["deal_lost_reasons"] == {"scanned": 1, "flagged": 1} and scan["flagged_total"] == 1
+    assert "wheelchair" not in str(scan)
