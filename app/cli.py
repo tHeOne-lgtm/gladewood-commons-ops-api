@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db import make_engine, normalize_database_url
 from app.legacy_migration import run_legacy_migration
 from app.automations import run_automations
+from app.bigin_import import parse_rows, run_import
 from app.campaigns import send_due
 from app.digest import send_digest
 from app.seed import seed_default_email_templates, seed_default_pipelines
@@ -36,7 +37,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("send-due-campaigns", help="Send scheduled campaigns whose time has come (for cron)")
     sub.add_parser("send-digest", help="Email each staff member their due and overdue items (for the 7 am cron)")
     sub.add_parser("seed-email-templates", help="Create the default email templates if missing")
+    b = sub.add_parser("import-bigin", help="Import Bigin Accounts and Contacts exports (dry run unless --apply)")
+    b.add_argument("--accounts", default=None, help="Accounts export (CSV or JSON)")
+    b.add_argument("--contacts", default=None, help="Contacts export (CSV or JSON)")
+    b.add_argument("--apply", action="store_true")
+    b.add_argument("--actor", default=None, help="User id recorded on the batch (required with --apply)")
     args = ap.parse_args(argv)
+    if args.cmd == "import-bigin" and (args.apply and not args.actor or not (args.accounts or args.contacts)):
+        ap.error("import-bigin needs --accounts and/or --contacts, and --actor <user id> with --apply")
     if args.cmd == "migrate-legacy" and args.apply and not args.actor:
         ap.error("--apply needs --actor <your user id>: open deals must have an owner")
 
@@ -45,6 +53,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "run-automations":
         report = run_automations(db, dry_run=args.dry_run)
         print(json.dumps(report.model_dump(), indent=2, default=str))
+        return 0
+    if args.cmd == "import-bigin":
+        from app.models import User
+        actor = db.get(User, args.actor) if args.actor else None
+        if args.apply and actor is None:
+            sys.exit("--actor must be an existing user id")
+        acc = parse_rows(open(args.accounts, "rb").read()) if args.accounts else []
+        con = parse_rows(open(args.contacts, "rb").read()) if args.contacts else []
+        report = run_import(db, accounts=acc, contacts=con, actor=actor, dry_run=not args.apply,
+                            filename=", ".join(p for p in (args.accounts, args.contacts) if p))
+        print(json.dumps(report.as_dict(), indent=2))
         return 0
     if args.cmd == "send-due-campaigns":
         reports = send_due(db, settings)

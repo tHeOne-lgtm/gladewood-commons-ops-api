@@ -161,6 +161,14 @@ Segments (`segment` on a campaign) accept only `contact_kind`, `company_kind`, `
 
 Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` job emails each staff member their due and overdue list. Provider setup is in `docs/EMAIL_SETUP.md`.
 
+## Tags on contacts, companies, and deals (item 4)
+
+`PUT /api/contacts/{id}/tags`, `PUT /api/companies/{id}/tags`, `PUT /api/deals/{id}/tags` replace a record's tags; every list endpoint takes `tag=` and every output carries `tags`. `GET /api/tags?entity=` lists tags with counts; `POST /api/tags/bulk` adds and removes tags on up to 500 records in one call. Saved views for deals and companies accept `tag`.
+
+## Bigin import (item 3)
+
+`POST /api/imports/bigin` (admin) takes Bigin's Accounts and Contacts exports (CSV or the API's JSON), dry run by default, and writes one undoable import batch. `python -m app.cli import-bigin` does the same from a shell. What is imported, how rows are matched, and the cutover steps: `docs/BIGIN_IMPORT.md`.
+
 ## Dashboard and saved views (items 10 and 2)
 
 `GET /api/dashboard?days=30` returns one payload for the staff app home: resident inquiries in the window by source (contact source: web, whatsapp, referral, phone, email, other), the resident funnel (deals that reached each stage in the window, open now, median days in stage), conversion (inquiries, moved in, closed without move-in, rate), overdue deals and activities, referral partners quiet for 30 days, channel volume (WhatsApp in and out, emails sent, opened, bounced), and the demand target (`demand_target` in financials, default 6) against open deals at Deposit received or Confirmed.
