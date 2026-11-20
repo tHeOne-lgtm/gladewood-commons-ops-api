@@ -39,10 +39,10 @@ def test_closed_deal_needs_no_next_action_and_reopen_requires_one(client, staff_
     assert r.status_code == 200 and r.json()["status"] == "lost" and r.json()["next_action_at"] is None
 
     # Reopening with no next action is refused; with one it works.
-    r = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": _stage(p, "Touring").id}, headers=staff_headers)
+    r = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": _stage(p, "Toured").id}, headers=staff_headers)
     assert r.status_code == 422 and "next_action_at" in r.json()["detail"]
     nxt = (date.today() + timedelta(days=3)).isoformat()
-    r = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": _stage(p, "Touring").id, "next_action_at": nxt},
+    r = client.post(f"/api/deals/{d['id']}/move", json={"stage_id": _stage(p, "Toured").id, "next_action_at": nxt},
                     headers=staff_headers)
     assert r.status_code == 200 and r.json()["status"] == "open" and r.json()["next_action_at"] == nxt
 

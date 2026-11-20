@@ -3,14 +3,14 @@
 Idempotent: renames Touring to Toured, adds missing stages, refreshes positions and flags by
 stage name. Existing deals keep their stage ids.
 
-Revision ID: 0003
-Revises: 0002
+Revision ID: 0005
+Revises: 0004
 """
 from alembic import op
 from sqlalchemy.orm import Session
 
-revision = "0003"
-down_revision = "0002"
+revision = "0005"
+down_revision = "0004"
 branch_labels = None
 depends_on = None
 

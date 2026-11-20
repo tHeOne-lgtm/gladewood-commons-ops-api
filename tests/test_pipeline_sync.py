@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.models import Pipeline, PipelineStage
 from app.seed import seed_default_pipelines, sync_default_pipelines
 from sqlalchemy import select
@@ -12,7 +14,10 @@ def test_sync_renames_adds_and_reorders_without_losing_deal_stage_ids(client, db
     db.add(old)
     db.commit()
     touring_id = next(s.id for s in old.stages if s.name == "Touring")
-    deal = client.post("/api/deals", json={"title": "12 Pine", "pipeline_id": old.id, "stage_id": touring_id}, headers=staff_headers).json()
+    r = client.post("/api/deals", json={"title": "12 Pine", "pipeline_id": old.id, "stage_id": touring_id,
+                                        "next_action_at": date.today().isoformat()}, headers=staff_headers)
+    assert r.status_code == 201, r.text
+    deal = r.json()
 
     changed = sync_default_pipelines(db)
     db.commit()
