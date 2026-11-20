@@ -46,6 +46,9 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
 | `FORMS_WEBHOOK_SECRET` | For Netlify Forms | The JWS secret you type into the Netlify form notification; the API rejects unsigned deliveries to `/api/forms/netlify`. 32 or more random characters. |
 | `FORMS_RATE_LIMIT_PER_HOUR` | No | Default `10` submissions per IP per hour on the public form endpoints. |
+| `RULE11_ROUTER_URL`, `RULE11_SECRET` | For the portal | n8n Rule 11 router that screens every resident or case manager free-text submission. Unset = local word list (development only). |
+| `PORTAL_ALERT_EMAIL` | For the portal | Receives one alert when a submission is held because the router did not answer. |
+| `FILES_SERVICE_URL`, `FILES_SERVICE_SECRET` | For documents | Mac mini file service (n8n) and the HMAC secret for signed upload and download links. |
 | `INTEGRATION_API_KEY` | For the Command Center sync | Machine credential sent as `X-Api-Key`; opens only `/api/integrations/*`. See `docs/COMMAND_CENTER_REPOINT.md`. |
 | `EMAIL_PROVIDER` | For email | `resend` (metrics through its webhook), `smtp` (Google Workspace relay, no metrics), or `log` (default; nothing leaves, rows are still written). |
 | `EMAIL_FROM` | For email | Sender, for example `Paul Selman <paul@gladewoodcommons.com>`. The domain must be verified at the provider. |
@@ -173,6 +176,10 @@ Cron: the 15 minute job also runs `send-due-campaigns`; a daily `send-digest` jo
 ## Command Center sync (machine credential)
 
 `GET /api/integrations/bigin-accounts` and `POST /api/integrations/bigin-accounts/upsert` speak Bigin's Accounts shape so the Command Center page and its Make scenario (n8n next) only change URL and auth. Header `X-Api-Key` = `INTEGRATION_API_KEY`. Details and the cutover record: `docs/COMMAND_CENTER_REPOINT.md`.
+
+## Portal v1 (Phase 2): roles, housing, maintenance, documents, grants
+
+Six roles (owner, management, ops_staff, audit, resident, case_manager), rooms and tenancies, documents as metadata with signed links to the Mac mini file service, maintenance requests screened by the n8n Rule 11 router (held when it is unreachable), and resident-controlled case manager grants. Routes, contracts, and the verification steps: `docs/PORTAL_V1.md`.
 
 ## Dashboard and saved views (items 10 and 2)
 

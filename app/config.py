@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # Machine credential for the Command Center sync (Make today, n8n next). Sent as X-Api-Key.
     # Scoped to /api/integrations/* only; it can never reach the staff or admin routes.
     integration_api_key: str = ""
+    # Portal v1 (decisions 2026-11-20). Rule 11 router on the Mac mini (n8n) screens every free-text
+    # submission before it is stored; unreachable router = hold, log, alert. Files live on the Mac
+    # mini (n8n file service) with a Google Drive copy; the API keeps metadata and signs links.
+    rule11_router_url: str = ""
+    rule11_secret: str = ""
+    portal_alert_email: str = ""
+    files_service_url: str = ""
+    files_service_secret: str = ""
     # Email (Phase 2c, items 9 and 10). Provider "resend" (campaign metrics), "smtp" (Google Workspace,
     # no metrics), or "log" (nothing leaves; rows are still written). Every send carries the postal
     # address and an unsubscribe link, so email_postal_address is required before the first send.

@@ -4,7 +4,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
-from app.auth import require_staff
+from app.auth import ADMIN_ROLES, require_staff
 from app.crm_common import get_or_404
 from app.db import get_db
 from app.models import SavedView, User
@@ -39,9 +39,9 @@ def create_view(item: SavedViewIn, db: Session = Depends(get_db), user: User = D
 
 
 def _editable(row: SavedView, user: User) -> None:
-    if row.owner_id != user.id and not row.shared and user.role != "admin":
+    if row.owner_id != user.id and not row.shared and user.role not in ADMIN_ROLES:
         raise HTTPException(status_code=404, detail="View not found")  # a private view is invisible to others
-    if row.owner_id != user.id and user.role != "admin":
+    if row.owner_id != user.id and user.role not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Only the owner or an admin can change this view")
 
 

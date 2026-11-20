@@ -169,6 +169,7 @@ class Contact(ImportedRow, CrmTimestamps, Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     extra: Mapped[dict] = mapped_column(JSONType, default=dict)
     legacy_ref: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    portal_user_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)  # Supabase user id
     company = relationship("Company", lazy="joined")
 
 
@@ -426,3 +427,108 @@ class SavedView(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+# ---- Housing and portal v1 (migration 0010; plan Section 6 and 7). Data tier: Personal unless noted. ----
+class Room(Base):
+    """Data tier: Business."""
+    __tablename__ = "rooms"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("properties.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    room_type: Mapped[str] = mapped_column(String(16), default="private")   # private | shared
+    monthly_rent: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="available")    # available | occupied | hold | offline
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class Tenancy(Base):
+    """A resident's stay in a room. Links the resident contact (and their portal login) to housing."""
+    __tablename__ = "tenancies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="RESTRICT"), index=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("properties.id", ondelete="RESTRICT"), index=True)
+    room_id: Mapped[int | None] = mapped_column(ForeignKey("rooms.id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)  # pending | active | ended
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rent_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    deposit_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")  # operational only; the protected-term guard applies
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    contact = relationship("Contact", lazy="joined")
+    property = relationship("Property", lazy="joined")
+    room = relationship("Room", lazy="joined")
+
+
+class Document(Base):
+    """Metadata only. The file lives on the Mac mini file service with a Google Drive copy."""
+    __tablename__ = "documents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenancy_id: Mapped[int | None] = mapped_column(ForeignKey("tenancies.id", ondelete="CASCADE"), nullable=True, index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    property_id: Mapped[int | None] = mapped_column(ForeignKey("properties.id", ondelete="SET NULL"), nullable=True)
+    title: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(24), default="other")  # lease | addendum | house_rules | notice | agency | voucher | receipt | other
+    status: Mapped[str] = mapped_column(String(16), default="pending_upload")  # pending_upload | stored | removed
+    storage_key: Mapped[str] = mapped_column(Text, default="")
+    content_type: Mapped[str] = mapped_column(String(100), default="")
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    drive_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    shared_with_resident: Mapped[bool] = mapped_column(Boolean, default=False)
+    shared_with_case_manager: Mapped[bool] = mapped_column(Boolean, default=False)
+    uploaded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    uploaded_role: Mapped[str] = mapped_column(String(16), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class MaintenanceRequest(Base):
+    """Resident maintenance request. Free text goes through the Rule 11 router before it is kept:
+    clear -> stored; flagged -> text dropped, marker kept; router unreachable -> held (decision 2026-11-20)."""
+    __tablename__ = "maintenance_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenancy_id: Mapped[int] = mapped_column(ForeignKey("tenancies.id", ondelete="CASCADE"), index=True)
+    submitted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    category: Mapped[str] = mapped_column(String(24), default="other")  # plumbing | electrical | appliance | hvac | pest | safety | cleaning | other
+    title: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending_screening", index=True)  # pending_screening | withheld | open | in_progress | done | closed
+    screening_status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | clear | flagged | unreachable
+    screening_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    screened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    priority: Mapped[str] = mapped_column(String(8), default="normal")
+    assigned_to: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    tenancy = relationship("Tenancy", lazy="joined")
+
+
+class MaintenanceComment(Base):
+    __tablename__ = "maintenance_comments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("maintenance_requests.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    author_role: Mapped[str] = mapped_column(String(16), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    screening_status: Mapped[str] = mapped_column(String(16), default="clear")  # staff text: clear; resident text: screened
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PortalAccessGrant(Base):
+    """A resident's grant letting one case manager see parts of one tenancy (plan Section 6)."""
+    __tablename__ = "portal_access_grants"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenancy_id: Mapped[int] = mapped_column(ForeignKey("tenancies.id", ondelete="CASCADE"), index=True)
+    case_manager_email: Mapped[str] = mapped_column(Text, index=True)
+    case_manager_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    scopes: Mapped[list] = mapped_column(JSONType, default=list)  # subset of documents, maintenance, balance, payments
+    granted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    granted_by_role: Mapped[str] = mapped_column(String(16), default="resident")
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

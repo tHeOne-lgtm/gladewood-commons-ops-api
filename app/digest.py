@@ -6,11 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
+from app.auth import STAFF_ROLES
 from app.config import Settings
 from app.email_provider import EmailSendError, send_email
 from app.models import Activity, Deal, User
 
-STAFF_ROLES = ("admin", "staff")
 
 
 def digest_for(db: Session, user: User, now: datetime | None = None) -> tuple[str, str] | None:
