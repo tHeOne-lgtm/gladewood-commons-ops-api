@@ -4,11 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.audit import write_audit
 from app.auth import require_staff
-from app.crm_common import csv_response, diff, ensure_exists, get_or_404, snapshot
+from app.crm_common import csv_response, diff, ensure_exists, get_or_404, set_tags, snapshot, tags_for
 from app.db import get_db
-from app.models import Company, Contact, Deal, DealStageHistory, Pipeline, PipelineStage, Property, User, utcnow
+from app.models import Company, Contact, Deal, DealStageHistory, Pipeline, PipelineStage, Property, RecordTag, Tag, User, utcnow
 from app.schemas import DeleteResult
-from app.schemas_crm import DealIn, DealMove, DealOut
+from app.schemas_crm import DealIn, DealMove, DealOut, TagsSet
 
 router = APIRouter(prefix="/api/deals", tags=["crm: deals"])
 FIELDS = [f for f in DealIn.model_fields] + ["status", "closed_at"]
@@ -27,9 +27,11 @@ def _entered(db: Session, deal_ids: list[int]) -> dict[int, object]:
 
 def _outs(db: Session, rows: list[Deal]) -> list[DealOut]:
     entered = _entered(db, [r.id for r in rows])
+    tags = tags_for(db, "deal", [r.id for r in rows])
     out = []
     for row in rows:
         o = DealOut.model_validate(row)
+        o.tags = tags.get(row.id, [])
         o.stage_name = row.stage.name if row.stage else None
         o.contact_name = row.contact.display_name if row.contact else None
         o.company_name = row.company.name if row.company else None
@@ -89,8 +91,10 @@ def _require_open_fields(stage: PipelineStage, owner_id: str | None, next_action
         raise HTTPException(status_code=422, detail="next_action_at is required while a deal is open")
 
 
-def _query(pipeline_id, stage_id, status, contact_id, company_id, property_id, owner_id, q):
+def _query(pipeline_id, stage_id, status, contact_id, company_id, property_id, owner_id, q, tag=None):
     stmt = select(Deal)
+    if tag:
+        stmt = stmt.where(Deal.id.in_(select(RecordTag.entity_id).join(Tag).where(RecordTag.entity == "deal", Tag.name == tag)))
     for col, val in ((Deal.pipeline_id, pipeline_id), (Deal.stage_id, stage_id), (Deal.contact_id, contact_id),
                      (Deal.company_id, company_id), (Deal.property_id, property_id), (Deal.owner_id, owner_id)):
         if val is not None:
@@ -105,11 +109,11 @@ def _query(pipeline_id, stage_id, status, contact_id, company_id, property_id, o
 @router.get("", response_model=list[DealOut])
 def list_deals(pipeline_id: int | None = None, stage_id: int | None = None, status: str | None = "open",
                contact_id: int | None = None, company_id: int | None = None, property_id: int | None = None,
-               owner_id: str | None = None, q: str | None = None,
+               owner_id: str | None = None, q: str | None = None, tag: str | None = None,
                limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0),
                db: Session = Depends(get_db), _: User = Depends(require_staff)):
     rows = db.scalars(_query(pipeline_id, stage_id, status, contact_id, company_id, property_id,
-                             owner_id, q).limit(limit).offset(offset)).all()
+                             owner_id, q, tag).limit(limit).offset(offset)).all()
     return _outs(db, list(rows))
 
 
@@ -196,3 +200,15 @@ def delete_deal(row_id: int, db: Session = Depends(get_db), user: User = Depends
     db.delete(row)
     db.commit()
     return DeleteResult(deleted=row_id)
+
+
+@router.put("/{row_id}/tags", response_model=DealOut)
+def set_deal_tags(row_id: int, payload: TagsSet, db: Session = Depends(get_db), user: User = Depends(require_staff)):
+    row = get_or_404(db, Deal, row_id, "Deal")
+    before = tags_for(db, "deal", [row_id])[row_id]
+    after = set_tags(db, "deal", row_id, payload.tags)
+    if before != after:
+        write_audit(db, actor=user, action="deal.tags", entity="deal", entity_id=row_id,
+                    details={"changes": {"tags": [before, after]}})
+    db.commit()
+    return _out(row, db)

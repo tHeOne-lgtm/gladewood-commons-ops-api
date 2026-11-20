@@ -51,7 +51,7 @@ class CompanyIn(BaseModel):
 
 
 class CompanyOut(CompanyIn, _Out):
-    pass
+    tags: list[str] = []
 
 
 class ContactIn(BaseModel):
@@ -158,6 +158,7 @@ class DealIn(BaseModel):
 
 
 class DealOut(DealIn, _Out):
+    tags: list[str] = []
     stage_id: int
     status: str
     closed_at: datetime | None = None
@@ -589,8 +590,8 @@ class CampaignReportOut(BaseModel):
 ViewEntity = Literal["contacts", "companies", "deals", "activities"]
 VIEW_FILTER_KEYS: dict[str, set[str]] = {
     "contacts": {"q", "kind", "status", "company_id", "tag"},
-    "companies": {"q", "kind"},
-    "deals": {"pipeline_id", "stage_id", "status", "owner_id", "q", "mine", "overdue"},
+    "companies": {"q", "kind", "tag"},
+    "deals": {"pipeline_id", "stage_id", "status", "owner_id", "q", "mine", "overdue", "tag"},
     "activities": {"mine", "open_only", "overdue", "kind"},
 }
 
@@ -653,3 +654,34 @@ class DashboardOut(BaseModel):
     quiet_partner_list: list[DashboardDeal]
     channels: dict[str, int]
     demand: dict[str, int]
+
+
+# ---- Tags across entities (item 4) and the Bigin import (item 3) ----
+TagEntity = Literal["contact", "company", "deal"]
+
+
+class BulkTagIn(BaseModel):
+    entity: TagEntity
+    ids: list[int] = Field(min_length=1, max_length=500)
+    add: list[str] = Field(default_factory=list, max_length=20)
+    remove: list[str] = Field(default_factory=list, max_length=20)
+
+
+class TagCount(BaseModel):
+    name: str
+    count: int
+
+
+class BiginSkip(BaseModel):
+    module: str
+    row: int
+    reason: str
+    label: str = ""
+
+
+class BiginImportResult(BaseModel):
+    batch_id: int | None
+    dry_run: bool
+    companies: dict[str, int]
+    contacts: dict[str, int]
+    skipped: list[BiginSkip]
