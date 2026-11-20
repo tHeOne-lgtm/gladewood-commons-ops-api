@@ -65,6 +65,8 @@ def settings():
         email_provider="resend", resend_api_key="re_test", resend_webhook_secret="whsec_dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdA==",
         email_postal_address="PO Box 1, Chattanooga, TN 37401", email_unsubscribe_secret="unsub-secret-for-tests-32-bytes-long",
         integration_api_key="cc-test-key-0123456789abcdef0123456789",
+        files_service_url="https://files.example.test/webhook/gc/files", files_service_secret="files-secret-for-tests-32-bytes-long!",
+        portal_alert_email="alerts@example.test",
     )
 
 

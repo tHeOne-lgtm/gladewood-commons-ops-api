@@ -28,7 +28,7 @@ services:
     runtime: python
     schedule: "*/15 * * * *"
     buildCommand: pip install -r requirements.txt
-    startCommand: python -m app.cli run-automations && python -m app.cli send-due-campaigns
+    startCommand: python -m app.cli run-automations && python -m app.cli send-due-campaigns && python -m app.cli retry-screening
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.8"
@@ -45,6 +45,12 @@ services:
       - key: EMAIL_UNSUBSCRIBE_SECRET
         sync: false
       - key: RESEND_API_KEY
+        sync: false
+      - key: RULE11_ROUTER_URL
+        sync: false
+      - key: RULE11_SECRET
+        sync: false
+      - key: PORTAL_ALERT_EMAIL
         sync: false
   - type: cron
     name: gladewood-digest

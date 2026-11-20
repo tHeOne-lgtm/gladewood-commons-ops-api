@@ -16,8 +16,16 @@ from app.config import Settings, settings_dep
 from app.db import get_db
 from app.models import User, utcnow
 
-ROLES = ("admin", "staff", "tenant", "case_manager", "pending")
-STAFF_ROLES = ("admin", "staff")
+# Six portal roles (decision 2026-11-20) plus "pending" for a fresh sign-in.
+ROLES = ("owner", "management", "ops_staff", "audit", "case_manager", "resident", "pending")
+STAFF_ROLES = ("owner", "management", "ops_staff", "audit")   # CRM access; audit is read-only
+ADMIN_ROLES = ("owner", "management")                          # settings, roles, grant overrides, sends
+PORTAL_ROLES = ("resident", "case_manager")
+ROLE_ALIASES = {"admin": "owner", "staff": "ops_staff", "tenant": "resident"}  # pre-2026-11-20 names
+
+
+def normalize_role(role: str) -> str:
+    return ROLE_ALIASES.get(role, role)
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -77,7 +85,7 @@ def get_current_user(
 
     user = db.get(User, sub)
     if user is None:
-        role = "admin" if email and email in settings.bootstrap_admin_set else "pending"
+        role = "owner" if email and email in settings.bootstrap_admin_set else "pending"
         user = User(id=sub, email=email, role=role)
         db.add(user)
         write_audit(db, actor=user, action="user.first_login", entity="user", entity_id=sub,
@@ -86,6 +94,8 @@ def get_current_user(
         user.last_seen_at = utcnow()
         if email and user.email != email:
             user.email = email
+        if user.role in ROLE_ALIASES:
+            user.role = normalize_role(user.role)
     db.commit()
     return user
 
@@ -99,7 +109,7 @@ def mfa_required(request: Request, user: User, settings: Settings) -> bool:
 
 def require_roles(*roles: str):
     def dependency(request: Request, user: User = Depends(get_current_user),
-                   settings: Settings = Depends(settings_dep)) -> User:
+                   settings: Settings = Depends(settings_dep), db: Session = Depends(get_db)) -> User:
         if user.role not in roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="This account does not have access to this resource")
@@ -107,9 +117,20 @@ def require_roles(*roles: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="Multi-factor authentication is required for staff accounts. "
                                        "Complete the authenticator step and sign in again.")
+        if user.role == "audit":
+            # Audit / Governance: read everything, change nothing, and every read is logged.
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                    detail="The audit role is read-only")
+            write_audit(db, actor=user, action="audit.read", entity="request", entity_id=None,
+                        details={"path": request.url.path, "query": str(request.url.query)[:300]})
+            db.commit()
         return user
     return dependency
 
 
 require_staff = require_roles(*STAFF_ROLES)
-require_admin = require_roles("admin")
+require_admin = require_roles(*ADMIN_ROLES)
+require_owner = require_roles("owner")
+require_portal = require_roles(*PORTAL_ROLES)
+require_any_signed_in = require_roles(*ROLES)

@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
-from app.auth import require_staff
+from app.auth import ADMIN_ROLES, require_staff
 from app.crm_common import get_or_404
 from app.db import get_db
 from app.models import Activity, Company, Contact, Deal, Note, Property, User
@@ -41,7 +41,7 @@ def update_note(row_id: int, body: dict, db: Session = Depends(get_db), user: Us
     text = (body.get("body") or "").strip()
     if not text:
         raise HTTPException(status_code=422, detail="body is required")
-    if row.author_id != user.id and user.role != "admin":
+    if row.author_id != user.id and user.role not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Only the author or an admin can edit a note")
     row.body = text
     write_audit(db, actor=user, action="note.update", entity=row.entity, entity_id=row.entity_id,
@@ -54,7 +54,7 @@ def update_note(row_id: int, body: dict, db: Session = Depends(get_db), user: Us
 @router.delete("/{row_id}", response_model=DeleteResult)
 def delete_note(row_id: int, db: Session = Depends(get_db), user: User = Depends(require_staff)):
     row = get_or_404(db, Note, row_id, "Note")
-    if row.author_id != user.id and user.role != "admin":
+    if row.author_id != user.id and user.role not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Only the author or an admin can delete a note")
     write_audit(db, actor=user, action="note.delete", entity=row.entity, entity_id=row.entity_id,
                 details={"note_id": row.id, "body": row.body})

@@ -81,10 +81,11 @@ class UserOut(BaseModel):
     created_at: datetime
     last_seen_at: datetime
     mfa_required: bool = False
+    is_staff: bool = False
 
 
 class RoleUpdate(BaseModel):
-    role: str = Field(pattern=r"^(admin|staff|tenant|case_manager|pending)$")
+    role: str = Field(pattern=r"^(owner|management|ops_staff|audit|case_manager|resident|pending)$")
 
 
 class DemandSummary(BaseModel):

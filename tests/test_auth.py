@@ -39,13 +39,13 @@ def test_unknown_user_gets_pending_role_and_403(client, db, pending_headers):
 
 def test_bootstrap_admin_email_gets_admin_role(client, admin_headers):
     me = client.get("/api/me", headers=admin_headers).json()
-    assert me["role"] == "admin"
+    assert me["role"] == "owner"
     assert me["email"] == ADMIN_EMAIL
 
 
 def test_bootstrap_email_match_is_case_insensitive(client):
     headers = auth(make_token(str(uuid.uuid4()), ADMIN_EMAIL.upper()))
-    assert client.get("/api/me", headers=headers).json()["role"] == "admin"
+    assert client.get("/api/me", headers=headers).json()["role"] == "owner"
 
 
 def test_staff_can_list(client, staff_headers):
@@ -57,4 +57,4 @@ def test_existing_role_is_not_overwritten_by_bootstrap_list(client, db):
     db.add(user)
     db.commit()
     me = client.get("/api/me", headers=auth(make_token(user.id, ADMIN_EMAIL))).json()
-    assert me["role"] == "staff"
+    assert me["role"] == "ops_staff"

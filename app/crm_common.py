@@ -93,6 +93,8 @@ async def read_csv_upload(file: UploadFile, max_bytes: int = 5_000_000) -> list[
 
 def automation_owner(db: Session) -> str | None:
     """The user that owns records created by webhooks and rules: the first admin, else the first staff."""
-    u = db.scalar(select(User).where(User.role == "admin").order_by(User.created_at)) or \
-        db.scalar(select(User).where(User.role == "staff").order_by(User.created_at))
-    return u.id if u else None
+    for role in ("owner", "management", "ops_staff", "admin", "staff"):
+        u = db.scalar(select(User).where(User.role == role).order_by(User.created_at))
+        if u is not None:
+            return u.id
+    return None

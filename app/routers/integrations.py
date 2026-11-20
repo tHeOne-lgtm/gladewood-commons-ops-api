@@ -21,7 +21,7 @@ from app.config import Settings, settings_dep
 from app.crm_common import get_or_404
 from app.db import get_db
 from app.fair_housing import protected_term_hits
-from app.models import Activity, Company, Contact, Deal, DealStageHistory, Message, Note, Pipeline
+from app.models import Activity, Company, Contact, Deal, DealStageHistory, Document, Message, Note, Pipeline
 from app.twilio import normalize_phone
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -177,3 +177,25 @@ def keyword_scan(db: Session = Depends(get_db), _: str = Depends(require_integra
         report[name] = {"scanned": scanned, "flagged": flagged}
     return {"scanned_at": datetime.now(timezone.utc).isoformat(), "fields": report,
             "flagged_total": sum(v["flagged"] for v in report.values())}
+
+
+# ---- file service callback (Mac mini, n8n): the file is stored, with its Google Drive copy ----
+class StoredIn(BaseModel):
+    storage_key: str = Field(min_length=1, max_length=500)
+    size_bytes: int | None = None
+    content_type: str = Field("", max_length=100)
+    drive_file_id: str | None = Field(None, max_length=128)
+
+
+@router.post("/documents/{doc_id}/stored")
+def document_stored(doc_id: int, item: StoredIn, db: Session = Depends(get_db), source: str = Depends(require_integration_key)):
+    row = get_or_404(db, Document, doc_id, "Document")
+    row.storage_key, row.status = item.storage_key, "stored"
+    row.size_bytes = item.size_bytes
+    if item.content_type:
+        row.content_type = item.content_type
+    row.drive_file_id = item.drive_file_id
+    write_audit(db, actor=None, action="document.stored", entity="document", entity_id=row.id,
+                details={"source": source, "size_bytes": item.size_bytes, "drive": bool(item.drive_file_id)})
+    db.commit()
+    return {"id": row.id, "status": row.status}
