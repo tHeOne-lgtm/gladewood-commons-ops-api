@@ -237,6 +237,9 @@ class Deal(ImportedRow, CrmTimestamps, Base):
     legacy_ref: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     stage = relationship("PipelineStage", lazy="joined")
+    contact = relationship("Contact", lazy="joined")
+    company = relationship("Company", lazy="joined")
+    property = relationship("Property", lazy="joined")
 
 
 class DealStageHistory(Base):

@@ -28,9 +28,11 @@ PROSPECT_STAGE = {
 }
 PROPERTY_STAGE = {
     "not sourced yet": "Not sourced yet", "sourced": "Not sourced yet", "contacted": "Contacted",
-    "touring": "Touring", "tour scheduled": "Touring", "toured": "Touring", "negotiating": "Negotiating",
-    "offer sent": "Negotiating", "signed": "Master lease signed", "master lease signed": "Master lease signed",
+    "touring": "Toured", "tour scheduled": "Tour scheduled", "toured": "Toured", "fact sheet sent": "Fact sheet sent",
+    "proposal sent": "Proposal sent", "offer sent": "Proposal sent", "negotiating": "Negotiating",
+    "signed": "Master lease signed", "master lease signed": "Master lease signed",
     "leased": "Master lease signed", "passed": "Passed", "lost": "Passed", "declined": "Passed",
+    "no response": "No response",
 }
 DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%B %d, %Y", "%b %d, %Y", "%Y/%m/%d")
 

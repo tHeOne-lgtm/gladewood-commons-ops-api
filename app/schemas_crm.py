@@ -162,6 +162,10 @@ class DealOut(DealIn, _Out):
     status: str
     closed_at: datetime | None = None
     stage_name: str | None = None
+    contact_name: str | None = None
+    company_name: str | None = None
+    property_address: str | None = None
+    stage_entered_at: datetime | None = None
     import_batch_id: int | None = None
 
 
