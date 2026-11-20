@@ -38,15 +38,17 @@ Ranking weights: daily use by a one-person operator, direct effect on filling ro
 | 5 | **Activities** (tasks, events, calls) with reminders and "my open" and "overdue" views | Zero activities in Bigin means follow-ups live in Paul's head today | API done; no UI, no reminders | Staff app: Today view (due and overdue), quick add from any record, complete in one click; daily email digest at 7 am of due and overdue items |
 | 6 | **Workflow automations** (instant and scheduled) | The only way follow-ups happen without memory: new inquiry creates a call task due in 24 hours; stage Tour Scheduled creates the event; 5 days with no touch sets the escalation flag; Application Complete creates a review task; 30 days dormant partner creates a check-in task | Not built | Six hard-coded automations in the API plus a Render cron job every 15 minutes; each run logged to the audit trail; no general rule engine (per assessment) |
 | 7 | **Web forms** into the pipeline | The marketing site already has Tour Request and Referral Inquiry forms (Netlify Forms); they should create a contact and a deal with `src-web` instead of landing in an inbox | Not built | Public `POST /api/forms/{inquiry,referral}` with rate limit and honeypot; the site's form handler posts there; form content never includes health details (Fair Housing notice stays on the form) |
-| 8 | **Email templates, send from a record, log to timeline** | Welcome, tour confirmation, application received, partner fact sheet; Bigin tags show these are the recurring messages | Not built | Phase 2c: templates with merge fields, send through SMTP (Resend or Google Workspace), every send logged on the timeline, mass send to a filtered partner list with per-recipient log; two-way inbox sync deferred |
-| 9 | **Saved views and duplicate control** | Bigin's My Deals, Closing This Month, Recently Modified, Unread; Paul's push already upserts by name | Filters done; duplicates for contacts done; no saved views; no upsert endpoint | `saved_views` table (name, module, filters, sort, columns) and a view switcher in the UI; `POST /api/contacts/upsert` and `/companies/upsert` matching on email, then phone, then name |
-| 10 | **Dashboard and target meter** | One screen answering: how many inquiries this month, by source, conversion by stage, rooms to fill against the demand target, overdue follow-ups, partners gone quiet | Pipeline summary endpoint done | Staff app home: funnel per pipeline, source mix, time in stage, demand target meter (`demand_target` already stored), overdue count, dormant partners list |
+| 8 | **WhatsApp messaging** (Bigin: WhatsApp Business integration) | Already live: Twilio WhatsApp sender, advertised on Facebook click-to-WhatsApp ads; inquiries arrive there today and are not in any system | Not built | Twilio inbound webhook creates or matches a contact by phone, opens a resident-inquiry deal tagged `src-whatsapp`, and logs every message on the timeline; staff app conversation view with reply, canned replies, and template sends; opt-in and opt-out recorded per contact; business-initiated messages after the 24 hour window use Meta-approved templates (stable general knowledge of the WhatsApp Business Platform rules) |
+| 9 | **Mass email campaigns with insights** (Bigin: mass email, email insights) | Marketing to inquiry lists and partner lists; monthly partner update; room-available announcements | Not built | Segments from saved filters and tags; campaign send through the email provider with per-recipient log, opens and clicks where the provider reports them, bounces and unsubscribes written back to the contact; CAN-SPAM footer and one-click unsubscribe on every send; Fair Housing advertising language check on templates (equal housing statement, no protected-class targeting) |
+| 10 | **Dashboard and target meter** plus **1:1 email from a record with templates** | One screen answering: inquiries this month by source (web, WhatsApp, referral, phone), conversion by stage, rooms to fill against the demand target, overdue follow-ups, partners gone quiet; plus welcome, tour confirmation, application received, partner fact sheet sent from a record and logged | Pipeline summary endpoint done | Staff app home with funnel, source mix, time in stage, demand target meter, overdue and dormant lists; templates with merge fields and send from a record logged on the timeline |
+
+Folded into other items rather than ranked: saved views (part of 2, stored in a `saved_views` table with a switcher) and duplicate control with upsert endpoints matching email, then phone, then name (part of 3, used by the Bigin import and the Command Center push).
 
 ## 4. Deliberately excluded
 
 | Bigin feature | Reason |
 |---|---|
-| Built-in telephony, WhatsApp, call recording | Twilio later if call volume justifies it; no evidence of need (0 calls logged) |
+| Built-in telephony, call recording | Voice calls through Twilio later if call volume justifies it; WhatsApp is in the ten because it is already live |
 | Business card scanner, AI assistant, mobile app | Responsive web covers phone use; the rest is cost without a Gladewood use |
 | Products module | 0 products; room types are a field, not a catalog, until the Books phase |
 | Grants and Donors pipeline | WASH nonprofit work; different entity, stays out of Gladewood data |
@@ -58,20 +60,27 @@ Ranking weights: daily use by a one-person operator, direct effect on filling ro
 
 | Phase | Features | API work | Staff app work | Exit check |
 |---|---|---|---|---|
-| **2a. Staff app foundation** | 1, 2, 3, 4, 5 | Migration 0003 (resident deal fields, partner agreement status, tags on deals and companies); Bigin import CLI; upsert endpoints | New repo `gladewood-staff-app` (Vite, React, TypeScript); sign-in (magic link plus password); contacts, companies, kanban, deal page, activities Today view, notes and timeline; CI with unit and browser tests | Paul runs a week of inquiries in the app with no spreadsheet; Bigin import shows 121 contacts and 130 companies with zero rejections |
-| **2b. Automation and intake** | 6, 7, 9, 10 | Six automations plus cron; forms endpoints; saved views; dashboard queries | Dashboard home; saved view switcher; form success pages on the marketing site | A test tour request on the site creates a contact, a deal, and a call task within one minute; the 7 am digest arrives |
-| **2c. Email** | 8 | Templates, send, log; provider credentials in Render | Compose from a record; template picker; partner mass send with preview | Welcome email sent from a deal appears on its timeline; partner send logs one row per recipient |
+| **2a. Staff app foundation** | 1, 2, 3, 4, 5, 8 | Migration 0003 (resident deal fields, partner agreement status, tags on deals and companies, `messages` and `consents` tables); Bigin import CLI; upsert endpoints; Twilio inbound and status webhooks with signature validation | New repo `gladewood-staff-app` (Vite, React, TypeScript); sign-in (magic link plus password); contacts, companies, kanban, deal page, activities Today view, notes and timeline; WhatsApp conversation view; CI with unit and browser tests | Paul runs a week of inquiries in the app with no spreadsheet; a WhatsApp message from the Facebook ad creates a contact and a deal and is answered from the app; Bigin import shows 121 contacts and 130 companies with zero rejections |
+| **2b. Automation and intake** | 6, 7, 10 | Six automations plus cron; forms endpoints; saved views; dashboard queries | Dashboard home; saved view switcher; form success pages on the marketing site | A test tour request on the site creates a contact, a deal, and a call task within one minute; the 7 am digest arrives |
+| **2c. Email and campaigns** | 9, 10 (email part) | Templates, 1:1 send, campaign send with per-recipient log, unsubscribe endpoint, bounce webhook; provider credentials in Render | Compose from a record; template picker; segment builder; campaign preview and send; campaign report | Welcome email sent from a deal appears on its timeline; a partner campaign logs one row per recipient and an unsubscribe updates the contact |
 | **Cutover** | 3 | Repoint the Command Center's Make push to `/api/contacts/upsert`; freeze Bigin to read-only; export a final Bigin backup | | Bigin subscription cancelled after 30 days with no reads |
 
 **Effort (Assumption):** 2a about 3 weeks, 2b about 3 weeks, 2c about 2 weeks of full-time work; scale by available hours. The order front-loads the screens Paul uses daily and defers email, which is the most integration-heavy piece.
 
 ## 6. Checked against the two-attempt rule
 
-Each item above was checked twice: once against Bigin's own feature pages and once against Paul's account metadata. Items 6, 7, and 8 are the ones with external dependencies (cron, Netlify forms, an email provider) and are the likeliest to need a second attempt; their alternatives are recorded here in advance: a manual "run automations now" button if cron is unreliable on Render Free; a Netlify Forms webhook if direct POST from the site is blocked by its policy; and Supabase's SMTP relay if a separate provider is not wanted.
+Each item above was checked twice: once against Bigin's own feature pages and once against Paul's account metadata. Items 6, 7, 8, and 9 are the ones with external dependencies (cron, Netlify forms, Twilio, an email provider) and are the likeliest to need a second attempt; their alternatives are recorded here in advance: a manual "run automations now" button if cron is unreliable on Render Free; a Netlify Forms webhook if direct POST from the site is blocked by its policy; Twilio's own Conversations inbox as a stopgap if the webhook route stalls; and Supabase's SMTP relay for 1:1 mail if a campaign provider is not wanted yet.
 
-## 7. Decisions needed
+## 7. Compliance notes for 8 and 9 (Analysis; verify with your attorney)
+
+- Consent: record opt-in source and time for every WhatsApp and email contact (ad click, form checkbox, verbal). Honor opt-out immediately and keep the record. TCPA applies to texting; the WhatsApp Business Platform has its own opt-in and template rules.
+- Advertising: every campaign template carries the Equal Housing Opportunity statement; no language or targeting that references protected classes; copy for resident campaigns describes the housing, not the resident.
+- Data: no health, disability, or benefit details in any message template or segment filter. Segments are built from source, stage, tag, and company kind only.
+
+## 8. Decisions needed
 
 1. Confirm the ten and the exclusions.
 2. Confirm the Bigin import and cutover timeline (recommendation: import during 2a, cancel after 2b is live).
-3. Email provider for 8: Resend, Postmark, or Google Workspace SMTP.
+3. Email and campaign provider for 9 and 10: Resend, Postmark, or Google Workspace SMTP (campaign metrics need Resend or Postmark).
+5. Twilio details for 8: the WhatsApp sender number or Messaging Service, and whether the Facebook ad points at that number directly.
 4. Name for the staff app repository (recommendation: `gladewood-staff-app`).
