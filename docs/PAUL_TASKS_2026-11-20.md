@@ -98,7 +98,7 @@ Shortlist: Resend (campaign metrics through a webhook, free tier for small volum
 - Phase 3: Stripe for card and ACH (yes or no), and whether some residents pay through agency checks that need manual posting.
 - Phase 4: Plaid bank feeds or CSV import first.
 - Attorney review before Phase 3: deposit handling, late fees, the case manager authorization form, the screening criteria, and the Rule 11 keyword list.
-- Assigning the management, ops staff, and audit roles today needs an API call (`PUT /api/users/{id}/role`); say the word and a Users page goes into the staff app.
+- Assign roles on the staff app's Users page (owner and management see it): pick the role next to each email and confirm. Nobody can change their own role, and only an owner can grant or remove owner.
 
 ## End goal
 
