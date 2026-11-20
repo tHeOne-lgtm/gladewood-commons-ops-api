@@ -64,6 +64,7 @@ def settings():
         public_base_url="http://testserver",
         email_provider="resend", resend_api_key="re_test", resend_webhook_secret="whsec_dGVzdC1zZWNyZXQtdGVzdC1zZWNyZXQtdGVzdA==",
         email_postal_address="PO Box 1, Chattanooga, TN 37401", email_unsubscribe_secret="unsub-secret-for-tests-32-bytes-long",
+        integration_api_key="cc-test-key-0123456789abcdef0123456789",
     )
 
 
