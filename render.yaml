@@ -23,3 +23,14 @@ services:
         sync: false
       - key: BOOTSTRAP_ADMIN_EMAILS
         sync: false
+  - type: cron
+    name: gladewood-automations
+    runtime: python
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.cli run-automations
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: DATABASE_URL
+        sync: false

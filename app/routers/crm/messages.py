@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.audit import write_audit
 from app.auth import require_staff
 from app.config import Settings, settings_dep
-from app.crm_common import set_tags
+from app.crm_common import automation_owner, set_tags
 from app.db import get_db
 from app.models import Consent, Contact, Deal, DealStageHistory, Message, Pipeline, User, utcnow
 from app.schemas_crm import ConversationOut, MessageOut, SendMessageIn
@@ -45,17 +45,11 @@ def active_consent(db: Session, contact_id: int, consent_type: str = "whatsapp")
                                            Consent.withdrawn_at.is_(None)).order_by(Consent.id.desc()))
 
 
-def _automation_owner(db: Session) -> str | None:
-    u = db.scalar(select(User).where(User.role == "admin").order_by(User.created_at)) or \
-        db.scalar(select(User).where(User.role == "staff").order_by(User.created_at))
-    return u.id if u else None
-
-
 def _open_inquiry_if_needed(db: Session, contact: Contact) -> Deal | None:
     if db.scalar(select(Deal).where(Deal.contact_id == contact.id, Deal.status == "open")):
         return None
     pipeline = db.scalar(select(Pipeline).where(Pipeline.slug == "resident-inquiry"))
-    owner = _automation_owner(db)
+    owner = automation_owner(db)
     if pipeline is None or not pipeline.stages or owner is None:
         return None
     stage = pipeline.stages[0]

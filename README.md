@@ -44,6 +44,8 @@ render.yaml      Render blueprint (secrets stay in the dashboard)
 | `TWILIO_WHATSAPP_FROM` | For WhatsApp | The WhatsApp sender in E.164, for example `+14155238886`. |
 | `PUBLIC_BASE_URL` | For WhatsApp | `https://gladewood-commons-ops-api.onrender.com`; used to validate Twilio signatures and as the status callback. |
 | `TWILIO_VALIDATE_SIGNATURE` | No | Default `true`. Set `false` only for local testing. |
+| `FORMS_WEBHOOK_SECRET` | For Netlify Forms | The JWS secret you type into the Netlify form notification; the API rejects unsigned deliveries to `/api/forms/netlify`. 32 or more random characters. |
+| `FORMS_RATE_LIMIT_PER_HOUR` | No | Default `10` submissions per IP per hour on the public form endpoints. |
 
 Copy `.env.example` to `.env` for local work. Never commit `.env`.
 
@@ -110,6 +112,24 @@ Prospects become `prospect` contacts plus deals in the Resident inquiry pipeline
 ## WhatsApp (Twilio)
 
 Point the Twilio WhatsApp sender's inbound webhook at `POST /api/webhooks/twilio/whatsapp` and its status callback at `POST /api/webhooks/twilio/status`, both on the public API URL. Every inbound message is signature-checked, matched to a contact by phone (or creates a `prospect` tagged `src-whatsapp`), records WhatsApp consent (a STOP keyword withdraws it), and opens a Resident inquiry deal when the contact has none open. Staff read and reply through `GET /api/conversations`, `GET /api/conversations/{phone}/messages`, `POST /api/conversations/{phone}/read`, and `POST /api/messages/whatsapp`. Replies outside the 24 hour window need `allow_outside_window` and an approved template on the Twilio side.
+
+## Web forms (Phase 2b, item 7)
+
+Two public endpoints take the marketing site's forms straight into the CRM, with no bearer token: `POST /api/forms/inquiry` (Tour Request, room inquiry) and `POST /api/forms/referral` (Referral Inquiry from a case manager, coordinator, or employer). Both accept JSON or form-encoded bodies, tolerate the usual field name variants (`full_name`, `tel`, `comments`, `first_name` plus `last_name`), drop any submission whose hidden `website` honeypot field is filled, and limit each IP to `FORMS_RATE_LIMIT_PER_HOUR`. A submission matches an existing contact by email, then by phone; otherwise it creates one (`source=web`, tag `src-web`). It leaves the message as a note, records email consent when the person opted in, opens a deal in the right pipeline when the contact has none open, and creates the first follow-up task. Netlify Forms can also deliver to `POST /api/forms/netlify`, which verifies Netlify's JWS signature with `FORMS_WEBHOOK_SECRET`. Setup for the marketing site is in `docs/FORMS_INTEGRATION.md`. Forms must not ask for health, disability, or benefit details; nothing in these endpoints stores them.
+
+## Automations (Phase 2b, item 6)
+
+Five hard-coded rules in `app/automations.py` run every 15 minutes from the Render cron job (`python -m app.cli run-automations`), and staff can run them on demand with `POST /api/automations/run` (`?dry_run=true` reports what would happen without writing). Each firing is recorded in `automation_runs`, so a rule never repeats itself for the same record, and in the audit log.
+
+| Rule | Trigger | Action |
+|---|---|---|
+| `inquiry_callback` | Resident deal at Inquiry with no open activity | Task "Call back new inquiry" due in 24 hours |
+| `tour_event` | Any deal at a stage named Tour scheduled with no event | Event on the deal's next action date at 3 pm UTC |
+| `stale_escalation` | Open deal whose next action is 5 or more days overdue | `escalation_flag` set on the deal plus a high priority task due in 4 hours; the flag clears on the next run after staff set a current next action |
+| `application_review` | Resident deal at Income verified | Task "Review application" due in 2 days |
+| `partner_checkin` | Partner deal with no update or activity for 30 days | Task "Check in with partner" due in 2 days, at most once per 30 days |
+
+`GET /api/automations/rules` lists the rules with the last time each fired. The 7 am email digest waits for the email phase.
 
 ## Migrations
 

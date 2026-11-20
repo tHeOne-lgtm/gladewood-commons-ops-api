@@ -401,3 +401,62 @@ class SendMessageIn(BaseModel):
     phone: str | None = None
     body: str = Field(min_length=1, max_length=1600)
     allow_outside_window: bool = False
+
+
+class InquiryFormIn(BaseModel):
+    """Public tour or room inquiry. Operational fields only; the form must not ask for health,
+    disability, or benefit details, and nothing here stores them."""
+    name: str = Field(min_length=1, max_length=120)
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=40)
+    message: str = Field("", max_length=2000)
+    room_preference: str = Field("", max_length=40)
+    move_in_target: str = Field("", max_length=40)
+    contact_ok: bool = False
+    page: str = Field("", max_length=200)
+    website: str = Field("", max_length=200)  # honeypot; must stay empty
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ReferralFormIn(BaseModel):
+    """Public referral-partner inquiry from a case manager, coordinator, or employer."""
+    name: str = Field(min_length=1, max_length=120)
+    organization: str = Field(min_length=1, max_length=200)
+    organization_type: str = Field("agency", max_length=32)
+    role: str = Field("", max_length=120)
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=40)
+    message: str = Field("", max_length=2000)
+    page: str = Field("", max_length=200)
+    website: str = Field("", max_length=200)  # honeypot
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class FormResult(BaseModel):
+    ok: bool = True
+    contact_id: int
+    deal_id: int | None
+    created_contact: bool
+
+
+class AutomationAction(BaseModel):
+    rule: str
+    entity: str
+    entity_id: int
+    action: str
+    detail: str = ""
+
+
+class AutomationReport(BaseModel):
+    dry_run: bool
+    ran_at: datetime
+    actions: list[AutomationAction]
+    counts: dict[str, int]

@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.db import make_engine, normalize_database_url
 from app.legacy_migration import run_legacy_migration
+from app.automations import run_automations
 from app.seed import seed_default_pipelines
 
 
@@ -28,11 +29,17 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--actor", default=None,
                    help="User id recorded as deal owner and history actor (required with --apply)")
     sub.add_parser("seed-pipelines", help="Create the default pipelines if missing")
+    a = sub.add_parser("run-automations", help="Run the follow-up rules once (for cron)")
+    a.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "migrate-legacy" and args.apply and not args.actor:
         ap.error("--apply needs --actor <your user id>: open deals must have an owner")
 
     db = _session()
+    if args.cmd == "run-automations":
+        report = run_automations(db, dry_run=args.dry_run)
+        print(json.dumps(report.model_dump(), indent=2, default=str))
+        return 0
     if args.cmd == "seed-pipelines":
         n = seed_default_pipelines(db)
         db.commit()

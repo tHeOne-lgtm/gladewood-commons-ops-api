@@ -336,3 +336,15 @@ class Message(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class AutomationRun(Base):
+    """One firing of an automation rule for one record. Rules check this table before acting,
+    so a rule never creates the same task twice and cron can run as often as needed."""
+    __tablename__ = "automation_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule: Mapped[str] = mapped_column(String(48), index=True)
+    entity: Mapped[str] = mapped_column(String(32))
+    entity_id: Mapped[int] = mapped_column(Integer, index=True)
+    ran_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    details: Mapped[dict | None] = mapped_column(JSONType, nullable=True)

@@ -19,8 +19,8 @@ DEFAULT_PIPELINES = [
         "slug": "resident-inquiry", "name": "Resident inquiry", "position": 2,
         "description": "Inquiry to move-in for independent shared housing.",
         "stages": [
-            ("Inquiry", 10), ("Screened", 30), ("Income verified", 50), ("Deposit received", 80),
-            ("Confirmed", 90), ("Moved in", 100, "won"), ("Closed, no move-in", 0, "lost"),
+            ("Inquiry", 10), ("Screened", 30), ("Tour scheduled", 40), ("Toured", 45), ("Income verified", 50),
+            ("Deposit received", 80), ("Confirmed", 90), ("Moved in", 100, "won"), ("Closed, no move-in", 0, "lost"),
         ],
     },
     {
