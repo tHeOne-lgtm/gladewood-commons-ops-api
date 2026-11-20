@@ -31,6 +31,8 @@ Everything below is a step only you can do (accounts, secrets, decisions). Each 
 
 ## 4. Create the two Netlify sites (Paul, computer, 20 minutes)
 
+Full click path, the Supabase redirect step, and the error table: `docs/NETLIFY_SITES.md`. When both sites exist, paste their URLs in the chat and I set `CORS_ORIGINS` on Render for you.
+
 1. Go to app.netlify.com, Add new site (or Add new project), Import an existing project, pick GitHub, choose GLADEWOOD-staff-app.
 2. Staff site: leave Base directory empty, Build command `npm run build`, Publish directory `dist`. Add environment variables `VITE_API_URL` = the Render URL, `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from supabase.com (Project Settings, API; use the publishable key, never the secret key). Deploy.
 3. Portal site: repeat with the same repository, Base directory `portal`, same three variables. Deploy.
