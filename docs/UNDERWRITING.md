@@ -58,3 +58,13 @@ and the link to a property, deal or Command Center commitment (`commitment_ref`)
 a reason and a review date; a second call answers 409. All text passes the protected-term guard, as the page itself
 does before it convenes. The panel advises; Paul decides. The shell's Today tab has the entry point (Council panel,
 Convene button); the staff app can show sessions beside the property at the Underwriting and Negotiating stages.
+
+## Plain SMS on the Twilio inbound route (same branch, 2026-11-21)
+
+Atlas gap 1, the SMS half. `POST /api/webhooks/twilio/sms` and the existing `/whatsapp` path now share one handler:
+the channel comes from the From prefix (`whatsapp:` or a bare number), so the SMS sender in the Twilio console can
+point at either path. An SMS creates or matches the contact (display name "SMS 0199", source and tag `sms`),
+records an `sms` consent on the first message, withdraws only that consent on STOP, stores the message with
+channel `sms`, and opens an "SMS inquiry" deal the same way WhatsApp does. Outbound stays WhatsApp only. Paul's
+step: in the Twilio console, set the SMS sender's inbound webhook to the `/api/webhooks/twilio/sms` URL (task 9 in
+`PAUL_TASKS_2026-11-20.md` covers the WhatsApp sender; this is the same click path for the phone number).
