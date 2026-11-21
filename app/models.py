@@ -564,3 +564,31 @@ class UnderwritingSetting(Base):
     __tablename__ = "underwriting_settings"
     key: Mapped[str] = mapped_column(String(32), primary_key=True)
     value: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+
+
+class CouncilSession(Base):
+    """One Advisory Council (Round Table) session mirrored into the CRM: the brief, the Chair's verdict and
+    Paul's own decision, linked to the property, deal or Command Center commitment it was about (backlog
+    item 1 and Atlas gap 9, 2026-11-21). The verdict part is append-only; the decision is recorded once.
+    Data tier: Business. The panel advises; Paul decides."""
+    __tablename__ = "council_sessions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    held_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    panel: Mapped[str] = mapped_column(String(1), default="A")
+    mode: Mapped[str] = mapped_column(String(16))
+    door: Mapped[str] = mapped_column(String(8))                        # one-way | two-way
+    brief: Mapped[str] = mapped_column(Text)
+    verdict_call: Mapped[str] = mapped_column(String(20))               # Go | Go with conditions | No
+    verdict_text: Mapped[str] = mapped_column(Text, default="")
+    conditions: Mapped[list] = mapped_column(JSONType, default=list)    # next actions, in order
+    split: Mapped[str] = mapped_column(Text, default="")                # where the seats agreed and split
+    human_check: Mapped[str] = mapped_column(Text, default="")
+    property_id: Mapped[int | None] = mapped_column(ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL"), nullable=True, index=True)
+    commitment_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str | None] = mapped_column(String(24), nullable=True)   # adopted | adopted with changes | declined | deferred
+    decision_reason: Mapped[str] = mapped_column(String(400), default="")
+    review_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

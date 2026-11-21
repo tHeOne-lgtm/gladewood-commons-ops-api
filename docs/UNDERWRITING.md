@@ -47,3 +47,14 @@ least 6%.
   property's deal; duplicating them on the underwriting row would make two places to keep in step.
 - Migrating the Hub's existing records. Paul decided they migrate once (2026-11-20); that is a one-off import
   through `PUT /api/underwriting/{id}` after the properties exist, not a feature.
+
+## Council sessions (same branch, 2026-11-21)
+
+Backlog item 1 and Atlas gap 9, the CRM half. `council_sessions` (migration 0012) mirrors a Round Table session:
+`POST /api/council` stores the brief, mode, door, the Chair's verdict (call, text, conditions, split, human check)
+and the link to a property, deal or Command Center commitment (`commitment_ref`). `GET /api/council` lists, with
+`property_id`, `deal_id`, `commitment_ref`, `undecided=true` and `due=true` (review date reached) filters.
+`PUT /api/council/{id}/decision` records Paul's decision once (adopted, adopted with changes, declined, deferred),
+a reason and a review date; a second call answers 409. All text passes the protected-term guard, as the page itself
+does before it convenes. The panel advises; Paul decides. The shell's Today tab has the entry point (Council panel,
+Convene button); the staff app can show sessions beside the property at the Underwriting and Negotiating stages.
