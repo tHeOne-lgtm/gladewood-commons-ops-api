@@ -107,7 +107,7 @@ from datetime import date  # noqa: E402
 from decimal import Decimal  # noqa: E402
 
 from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Numeric, UniqueConstraint  # noqa: E402
-from sqlalchemy.orm import relationship  # noqa: E402
+from sqlalchemy.orm import backref, relationship  # noqa: E402
 
 
 class CrmTimestamps:
@@ -532,3 +532,35 @@ class PortalAccessGrant(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class Underwriting(Base):
+    """One per property: the Prospect Hub underwriting view (stage, deal type, room plan, costs, per-property
+    overrides and the market block). The math lives in app/underwriting.py. Data tier: Business."""
+    __tablename__ = "underwritings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("properties.id", ondelete="CASCADE"), unique=True, index=True)
+    stage: Mapped[str] = mapped_column(String(16), default="Found", index=True)
+    deal_type: Mapped[str] = mapped_column(String(8), default="lease")
+    private_rooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    shared_rooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bedrooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lease_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    sale_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    utilities: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    inputs: Mapped[dict] = mapped_column(JSONType, default=dict)
+    market: Mapped[dict] = mapped_column(JSONType, default=dict)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    stage_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    # delete-orphan so the row goes with its property on SQLite too (Postgres has ON DELETE CASCADE)
+    property = relationship("Property", lazy="joined",
+                            backref=backref("underwriting", uselist=False, cascade="all, delete-orphan"))
+
+
+class UnderwritingSetting(Base):
+    """Planning defaults and targets for underwriting (the Hub's Settings page). One row per key."""
+    __tablename__ = "underwriting_settings"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(14, 4))
