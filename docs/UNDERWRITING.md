@@ -38,9 +38,9 @@ least 6%.
 
 ## Not built here, and why
 
-- The staff app page. The repository is not on this Mac. The page needs: the board (`GET /api/underwriting`),
-  the full view opened from the address, the stage drop-down, the lease or buy toggle, the five input panels, the
-  occupancy slider (call `GET` again with the row's inputs and an `occ` override), copy text and CSV buttons.
+- ~~The staff app page.~~ Built 2026-11-22 in GLADEWOOD-staff-app (branch `claude/outbox-and-underwriting-2026-11-22`,
+  page `/underwriting`). The occupancy slider calls `GET /api/underwriting/{id}?occ=N` (added the same day; a what-if
+  that is never stored).
 - The workflow builder (trigger, conditions, actions) and user-created tables. The stage change writes an audit
   row so a rule engine can read it later; `app/automations.py` runs only on deals today.
 - Owner contact, phone, email and source fields. The CRM already holds the owner as a contact or company on the

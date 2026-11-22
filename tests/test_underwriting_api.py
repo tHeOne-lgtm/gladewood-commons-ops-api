@@ -120,3 +120,13 @@ def test_deleting_the_property_removes_its_underwriting(client, staff_headers, d
     assert client.delete(f"/api/properties/{pid}", headers=staff_headers).status_code == 200
     db.expire_all()
     assert db.scalar(select(Underwriting).where(Underwriting.property_id == pid)) is None
+
+
+def test_occ_query_is_a_what_if_that_is_never_stored(client, staff_headers):
+    prop = _property(client, staff_headers)
+    client.put(f"/api/underwriting/{prop}", json={"private_rooms": 4, "lease_cost": 1800}, headers=staff_headers)
+    saved = client.get(f"/api/underwriting/{prop}", headers=staff_headers).json()
+    low = client.get(f"/api/underwriting/{prop}", params={"occ": 50}, headers=staff_headers).json()
+    assert low["resolved"]["occ"] == 50 and low["calc"]["cash"] < saved["calc"]["cash"]
+    assert client.get(f"/api/underwriting/{prop}", headers=staff_headers).json()["resolved"]["occ"] == saved["resolved"]["occ"]
+    assert client.get(f"/api/underwriting/{prop}", params={"occ": 101}, headers=staff_headers).status_code == 422

@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,8 +46,11 @@ def _overrides(row: Underwriting | None) -> dict:
     return inputs
 
 
-def _compute(row: Underwriting | None, st: dict[str, float]) -> dict:
-    i = uw.resolve_inputs(_record(row), _overrides(row), st)
+def _compute(row: Underwriting | None, st: dict[str, float], occ: float | None = None) -> dict:
+    overrides = _overrides(row)
+    if occ is not None:
+        overrides["occ"] = occ   # the page's occupancy slider: a what-if, never stored
+    i = uw.resolve_inputs(_record(row), overrides, st)
     miss = uw.missing(i)
     if miss:
         return {"resolved": i, "missing": miss, "calc": None, "checks": None, "scenarios": None, "projection": None}
@@ -62,7 +65,7 @@ def _row_for(db: Session, property_id: int) -> tuple[Property, Underwriting | No
     return prop, row
 
 
-def _out(prop: Property, row: Underwriting | None, st: dict[str, float]) -> UnderwritingOut:
+def _out(prop: Property, row: Underwriting | None, st: dict[str, float], occ: float | None = None) -> UnderwritingOut:
     base = {"property_id": prop.id, "address": prop.address, "exists": row is not None,
             "stage": row.stage if row else "Found", "deal_type": row.deal_type if row else "lease",
             "private_rooms": row.private_rooms if row else None, "shared_rooms": row.shared_rooms if row else None,
@@ -71,7 +74,7 @@ def _out(prop: Property, row: Underwriting | None, st: dict[str, float]) -> Unde
             "inputs": dict(row.inputs or {}) if row else {}, "market": dict(row.market or {}) if row else {},
             "notes": row.notes if row else "", "stage_changed_at": row.stage_changed_at if row else None,
             "updated_at": row.updated_at if row else None}
-    return UnderwritingOut(**base, **_compute(row, st))
+    return UnderwritingOut(**base, **_compute(row, st, occ))
 
 
 def _snapshot(row: Underwriting) -> dict:
@@ -123,9 +126,12 @@ def list_underwriting(db: Session = Depends(get_db), _: User = Depends(require_s
 
 
 @router.get("/{property_id}", response_model=UnderwritingOut)
-def get_underwriting(property_id: int, db: Session = Depends(get_db), _: User = Depends(require_staff)):
+def get_underwriting(property_id: int, occ: float | None = Query(None, ge=0, le=100), db: Session = Depends(get_db),
+                     _: User = Depends(require_staff)):
+    """The full view. `occ` is the page's occupancy slider: the numbers are recomputed at that occupancy and
+    nothing is stored."""
     prop, row = _row_for(db, property_id)
-    return _out(prop, row, _settings(db))
+    return _out(prop, row, _settings(db), occ)
 
 
 @router.put("/{property_id}", response_model=UnderwritingOut)
