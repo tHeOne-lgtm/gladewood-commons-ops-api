@@ -85,7 +85,8 @@ On the web service and the `gladewood-automations` cron:
 
 ## Not built
 
-- A staff app page. The routes are ready; the page belongs in the staff app repository.
+- ~~A staff app page.~~ Built 2026-11-22 in GLADEWOOD-staff-app (branch `claude/outbox-and-underwriting-2026-11-22`,
+  page `/outbox`).
 - The n8n kill switch does not reach this queue (owner decision 2026-11-18: it stops agents only). A later
   step could have it call `PUT /api/outbox/flags` through the integration key.
 - Inbound email replies are not matched to outbox rows (the CRM has no inbound email path; n8n triage owns
