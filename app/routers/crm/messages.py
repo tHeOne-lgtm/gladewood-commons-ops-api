@@ -45,7 +45,7 @@ def active_consent(db: Session, contact_id: int, consent_type: str = "whatsapp")
                                            Consent.withdrawn_at.is_(None)).order_by(Consent.id.desc()))
 
 
-def _open_inquiry_if_needed(db: Session, contact: Contact) -> Deal | None:
+def _open_inquiry_if_needed(db: Session, contact: Contact, channel: str = "whatsapp") -> Deal | None:
     if db.scalar(select(Deal).where(Deal.contact_id == contact.id, Deal.status == "open")):
         return None
     pipeline = db.scalar(select(Pipeline).where(Pipeline.slug == "resident-inquiry"))
@@ -53,14 +53,15 @@ def _open_inquiry_if_needed(db: Session, contact: Contact) -> Deal | None:
     if pipeline is None or not pipeline.stages or owner is None:
         return None
     stage = pipeline.stages[0]
-    deal = Deal(pipeline_id=pipeline.id, stage_id=stage.id, title=f"WhatsApp inquiry: {contact.display_name}",
+    label = "WhatsApp" if channel == "whatsapp" else "SMS"
+    deal = Deal(pipeline_id=pipeline.id, stage_id=stage.id, title=f"{label} inquiry: {contact.display_name}",
                 contact_id=contact.id, owner_id=owner, status="open", next_action_at=datetime.now(timezone.utc).date(),
-                extra={"source": "whatsapp"})
+                extra={"source": channel})
     db.add(deal)
     db.flush()
     db.add(DealStageHistory(deal_id=deal.id, from_stage_id=None, to_stage_id=stage.id, actor_id=None))
     write_audit(db, actor=None, action="deal.create", entity="deal", entity_id=deal.id,
-                details={"title": deal.title, "source": "whatsapp"})
+                details={"title": deal.title, "source": channel})
     return deal
 
 
@@ -90,51 +91,59 @@ def _check_signature(request: Request, settings: Settings, params: dict[str, str
 # ---------- webhooks (no bearer auth; Twilio signature instead) ----------
 
 @router.post("/api/webhooks/twilio/whatsapp", include_in_schema=False)
+@router.post("/api/webhooks/twilio/sms", include_in_schema=False)
 async def twilio_inbound(request: Request, db: Session = Depends(get_db), settings: Settings = Depends(settings_dep)):
+    """Inbound WhatsApp or plain SMS from Twilio (Atlas gap 1, 2026-11-21: the same route serves both; the
+    channel comes from the From prefix, so the SMS sender can point at either path). STOP withdraws the consent
+    for that channel; a first message records it."""
     params = await _form(request)
     _check_signature(request, settings, params)
     sid = params.get("MessageSid") or params.get("SmsSid") or ""
-    phone = normalize_phone(params.get("From", ""))
+    raw_from = params.get("From", "")
+    channel = "whatsapp" if raw_from.lower().startswith("whatsapp:") else "sms"
+    phone = normalize_phone(raw_from)
     body = (params.get("Body") or "").strip()
     if not phone:
         raise HTTPException(status_code=422, detail="From is required")
     if sid and db.scalar(select(Message).where(Message.provider_sid == sid)):
         return Response(content="<Response/>", media_type="application/xml")  # Twilio retry; already stored
 
+    label = "WhatsApp" if channel == "whatsapp" else "SMS"
     contact = find_contact_by_phone(db, phone)
     created = False
     if contact is None:
-        contact = Contact(display_name=f"WhatsApp {phone[-4:]}", phone=phone, kind="prospect", source="whatsapp",
-                          extra={"whatsapp_profile": (params.get("ProfileName") or "")[:80]})
+        extra = {"whatsapp_profile": (params.get("ProfileName") or "")[:80]} if channel == "whatsapp" else {}
+        contact = Contact(display_name=f"{label} {phone[-4:]}", phone=phone, kind="prospect", source=channel, extra=extra)
         db.add(contact)
         db.flush()
-        set_tags(db, "contact", contact.id, ["src-whatsapp"])
+        set_tags(db, "contact", contact.id, [f"src-{channel}"])
         write_audit(db, actor=None, action="contact.create", entity="contact", entity_id=contact.id,
-                    details={"source": "whatsapp"})
+                    details={"source": channel})
         created = True
 
     stop = body.lower().strip(" .!") in STOP_WORDS
-    consent = active_consent(db, contact.id)
+    consent = active_consent(db, contact.id, channel)
     if stop:
         if consent:
             consent.withdrawn_at = utcnow()
             consent.withdrawn_by = "contact"
             write_audit(db, actor=None, action="consent.withdraw", entity="contact", entity_id=contact.id,
-                        details={"consent_type": "whatsapp", "source": "stop_keyword"})
+                        details={"consent_type": channel, "source": "stop_keyword"})
     elif consent is None:
-        db.add(Consent(contact_id=contact.id, consent_type="whatsapp", source="whatsapp", recorded_by=None))
+        db.add(Consent(contact_id=contact.id, consent_type=channel, source=channel, recorded_by=None))
         write_audit(db, actor=None, action="consent.record", entity="contact", entity_id=contact.id,
-                    details={"consent_type": "whatsapp", "source": "inbound_message"})
+                    details={"consent_type": channel, "source": "inbound_message"})
 
-    msg = Message(channel="whatsapp", direction="in", contact_id=contact.id, phone=phone, body=body,
+    msg = Message(channel=channel, direction="in", contact_id=contact.id, phone=phone, body=body,
                   provider_sid=sid or None, status="received", media_count=int(params.get("NumMedia") or 0))
     db.add(msg)
     db.flush()
-    deal = None if stop else _open_inquiry_if_needed(db, contact)
+    deal = None if stop else _open_inquiry_if_needed(db, contact, channel)
     if deal is not None:
         msg.deal_id = deal.id
     write_audit(db, actor=None, action="message.in", entity="contact", entity_id=contact.id,
-                details={"message_id": msg.id, "new_contact": created, "stop": stop, "deal_id": deal.id if deal else None})
+                details={"message_id": msg.id, "new_contact": created, "stop": stop, "channel": channel,
+                         "deal_id": deal.id if deal else None})
     db.commit()
     return Response(content="<Response/>", media_type="application/xml")
 

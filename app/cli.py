@@ -12,6 +12,7 @@ from app.automations import run_automations
 from app.bigin_import import parse_rows, run_import
 from app.campaigns import send_due
 from app.digest import send_digest
+from app.outbox import dispatch as dispatch_outbox
 from app.rule11 import retry_held
 from app.seed import seed_default_email_templates, seed_default_pipelines
 
@@ -38,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("send-due-campaigns", help="Send scheduled campaigns whose time has come (for cron)")
     sub.add_parser("send-digest", help="Email each staff member their due and overdue items (for the 7 am cron)")
     sub.add_parser("seed-email-templates", help="Create the default email templates if missing")
+    sub.add_parser("dispatch-outbox", help="Run the outbox gates once and send what passed (for cron)")
     sub.add_parser("retry-screening", help="Re-screen portal submissions held while the Rule 11 router was unreachable (for cron)")
     b = sub.add_parser("import-bigin", help="Import Bigin Accounts and Contacts exports (dry run unless --apply)")
     b.add_argument("--accounts", default=None, help="Accounts export (CSV or JSON)")
@@ -73,6 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "send-due-campaigns":
         reports = send_due(db, settings)
         print(json.dumps([r.model_dump() for r in reports], indent=2, default=str))
+        return 0
+    if args.cmd == "dispatch-outbox":
+        print(json.dumps(dispatch_outbox(db, settings), indent=2, default=str))
         return 0
     if args.cmd == "send-digest":
         print(json.dumps(send_digest(db, settings), indent=2, default=str))

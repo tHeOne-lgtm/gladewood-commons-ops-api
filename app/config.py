@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""          # E.164, for example +14155238886
+    twilio_sms_from: str = ""               # E.164 of the SMS-capable number; blank means the queue cannot send SMS
     public_base_url: str = ""               # https://gladewood-commons-ops-api.onrender.com
     twilio_validate_signature: bool = True
     # Public web forms (Phase 2b, item 7). The Netlify outgoing-webhook secret signs form submissions.
@@ -52,6 +53,14 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+    # Outbox (Atlas gap 2, 2026-11-22). Shadow is on by default so a fresh deploy never sends from the queue:
+    # OUTBOX_SHADOW=false and the admin flag both have to be off before anything leaves. OUTBOX_PAUSED is the
+    # kill switch that survives a restart; the admin flag is the one flipped from the staff app.
+    outbox_shadow: bool = True
+    outbox_paused: bool = False
+    outbox_allowed_prices: str = ""         # space-separated figures copied from the Fact Sheet, e.g. "550 650 850 1100"
+    outbox_text_hours: str = "8-21"         # local hours (start inclusive, end exclusive) when SMS and WhatsApp may go out
+    outbox_timezone: str = "America/New_York"
     db_pool_size: int = 5
     db_max_overflow: int = 5
     db_pool_recycle_seconds: int = 1800

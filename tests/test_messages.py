@@ -129,3 +129,34 @@ def test_twilio_error_is_reported(client, app, admin_headers, staff_headers, pip
     r = client.post("/api/messages/whatsapp", json={"phone": "+14235550100", "body": "Hi"}, headers=staff_headers)
     assert r.status_code == 502 and "Not a valid WhatsApp number" in r.json()["detail"]
     assert json.dumps(r.json())  # body is JSON
+
+
+# ---- plain SMS on the same route (Atlas gap 1, 2026-11-21) ----
+def sms_inbound(client, phone="+14235550199", body="Is a room open?", sid="SMS1", path="/api/webhooks/twilio/sms"):
+    return _post_twilio(client, "http://testserver" + path, {"From": phone, "To": "+15550001111", "Body": body, "MessageSid": sid, "NumMedia": "0"})
+
+
+def test_sms_is_its_own_channel_on_either_path(client, db, admin_headers, staff_headers, pipelines):
+    client.get("/api/me", headers=admin_headers)
+    r = sms_inbound(client)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/xml")
+    c = db.scalar(select(Contact))
+    assert c.source == "sms" and c.display_name == "SMS 0199" and c.extra == {}
+    assert client.get(f"/api/contacts/{c.id}", headers=staff_headers).json()["tags"] == ["src-sms"]
+    m = db.scalar(select(Message))
+    assert m.channel == "sms" and m.direction == "in"
+    assert db.scalar(select(Consent).where(Consent.contact_id == c.id)).consent_type == "sms"
+    d = db.scalar(select(Deal))
+    assert d.title.startswith("SMS inquiry") and d.extra["source"] == "sms"
+    # the WhatsApp path accepts a plain number too, and the retry rule still holds
+    assert sms_inbound(client, sid="SMS1", path="/api/webhooks/twilio/whatsapp").status_code == 200
+    assert len(db.scalars(select(Message)).all()) == 1
+
+
+def test_sms_stop_withdraws_only_the_sms_consent(client, db, admin_headers, pipelines):
+    client.get("/api/me", headers=admin_headers)
+    sms_inbound(client, sid="SMS1")
+    inbound(client, phone="+14235550199", sid="WA1")      # the same person on WhatsApp
+    sms_inbound(client, sid="SMS2", body="STOP")
+    rows = {r.consent_type: r for r in db.scalars(select(Consent)).all()}
+    assert rows["sms"].withdrawn_at is not None and rows["whatsapp"].withdrawn_at is None
