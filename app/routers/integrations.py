@@ -22,6 +22,8 @@ from app.crm_common import get_or_404
 from app.db import get_db
 from app.fair_housing import protected_term_hits
 from app.models import Activity, Company, Contact, Deal, DealStageHistory, Document, Message, Note, Pipeline
+from app.outbox import OutboxError, create_item
+from app.schemas_outbox import AgentOutboxIn
 from app.twilio import normalize_phone
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
@@ -177,6 +179,24 @@ def keyword_scan(db: Session = Depends(get_db), _: str = Depends(require_integra
         report[name] = {"scanned": scanned, "flagged": flagged}
     return {"scanned_at": datetime.now(timezone.utc).isoformat(), "fields": report,
             "flagged_total": sum(v["flagged"] for v in report.values())}
+
+
+# ---- outbox drafts from agents (Atlas gap 2, 2026-11-22) ----
+@router.post("/outbox", status_code=201)
+def agent_outbox_draft(item: AgentOutboxIn, db: Session = Depends(get_db), source: str = Depends(require_integration_key),
+                       settings: Settings = Depends(settings_dep)):
+    """An agent (n8n job or the Claude lane) puts a draft in the queue. It arrives as a draft, linted,
+    and stays there until an admin approves it in the staff app; this key can neither approve nor send."""
+    contact = get_or_404(db, Contact, item.contact_id, "Contact")
+    deal = get_or_404(db, Deal, item.deal_id, "Deal") if item.deal_id else None
+    try:
+        row = create_item(db, settings, channel=item.channel, contact=contact, deal=deal, subject=item.subject, body=item.body,
+                          marketing=item.marketing, send_after=item.send_after, allow_outside_window=item.allow_outside_window,
+                          in_reply_to_email_id=item.in_reply_to_email_id, created_by=f"agent:{item.agent.strip()}", actor=None)
+    except OutboxError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    db.commit()
+    return {"id": row.id, "status": row.status, "lint": row.lint, "source": source}
 
 
 # ---- file service callback (Mac mini, n8n): the file is stored, with its Google Drive copy ----

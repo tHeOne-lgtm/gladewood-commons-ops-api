@@ -135,8 +135,9 @@ def skip_reason(db: Session, contact: Contact, *, marketing: bool) -> str | None
 def send_to_contact(db: Session, settings: Settings, *, contact: Contact, subject: str, body_text: str,
                     body_html: str = "", deal: Deal | None = None, template: EmailTemplate | None = None,
                     sent_by: str | None, sender_name: str = "Paul", marketing: bool, campaign_id: int | None = None,
-                    transport=None) -> Email:
-    """Render, gate, send, and log. A gated or failed send still returns a row (status skipped or failed)."""
+                    transport=None, extra_headers: dict[str, str] | None = None) -> Email:
+    """Render, gate, send, and log. A gated or failed send still returns a row (status skipped or failed).
+    `extra_headers` lets the outbox add In-Reply-To and References for a threaded reply."""
     reason = skip_reason(db, contact, marketing=marketing)
     ctx = merge_context(settings, contact, deal, sender_name)
     subj, text, html = compose(settings, subject=subject, body_text=body_text, body_html=body_html, ctx=ctx)
@@ -148,7 +149,8 @@ def send_to_contact(db: Session, settings: Settings, *, contact: Contact, subjec
     if reason:
         row.status, row.skip_reason = "skipped", reason
         return row
-    headers = {"List-Unsubscribe": f"<{ctx['unsubscribe_url']}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"}
+    headers = {"List-Unsubscribe": f"<{ctx['unsubscribe_url']}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+               **(extra_headers or {})}
     try:
         row.provider_message_id = send_email(settings, to=contact.email, subject=subj, text=text, html=html,
                                              headers=headers, transport=transport)

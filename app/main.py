@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings, get_settings
 from app.db import make_engine, normalize_database_url
-from app.routers import council, demand, financials, health, housing, integrations, portal, records, underwriting, users
+from app.routers import council, demand, financials, health, housing, integrations, outbox, portal, records, underwriting, users
 from app.routers.crm import (activities, automations, campaigns, companies, consents, contacts, dashboard, deals, decisions, email, forms, imports, messages, notes, pipelines, tags, timeline, today, views)
 
 
@@ -48,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(portal.router)
     app.include_router(underwriting.router)
     app.include_router(council.router)
+    app.include_router(outbox.router)
     for r in (companies, contacts, pipelines, deals, activities, notes, timeline, imports, today, decisions, consents, messages, forms, automations, email, campaigns, views, dashboard, tags):
         app.include_router(r.router)
     app.include_router(email.webhooks)

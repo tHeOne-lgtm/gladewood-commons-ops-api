@@ -43,13 +43,10 @@ def signature_valid(auth_token: str, url: str, params: dict[str, str], header: s
     return hmac.compare_digest(compute_signature(auth_token, url, params), header)
 
 
-def send_whatsapp(settings: Settings, to_e164: str, body: str, status_callback: str | None,
-                  transport: httpx.BaseTransport | None = None) -> dict:
-    """POST to Twilio's Messages resource. Returns the parsed JSON (sid, status, ...)."""
-    if not (settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_whatsapp_from):
-        raise RuntimeError("Twilio is not configured: set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM")
+def _post_message(settings: Settings, from_: str, to: str, body: str, status_callback: str | None,
+                  transport: httpx.BaseTransport | None) -> dict:
     url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.twilio_account_sid}/Messages.json"
-    data = {"From": f"whatsapp:{settings.twilio_whatsapp_from}", "To": f"whatsapp:{to_e164}", "Body": body}
+    data = {"From": from_, "To": to, "Body": body}
     if status_callback:
         data["StatusCallback"] = status_callback
     with httpx.Client(transport=transport, timeout=15.0) as client:
@@ -61,3 +58,19 @@ def send_whatsapp(settings: Settings, to_e164: str, body: str, status_callback: 
             msg = r.text
         raise RuntimeError(f"Twilio refused the message: {msg}")
     return r.json()
+
+
+def send_whatsapp(settings: Settings, to_e164: str, body: str, status_callback: str | None,
+                  transport: httpx.BaseTransport | None = None) -> dict:
+    """POST to Twilio's Messages resource. Returns the parsed JSON (sid, status, ...)."""
+    if not (settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_whatsapp_from):
+        raise RuntimeError("Twilio is not configured: set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM")
+    return _post_message(settings, f"whatsapp:{settings.twilio_whatsapp_from}", f"whatsapp:{to_e164}", body, status_callback, transport)
+
+
+def send_sms(settings: Settings, to_e164: str, body: str, status_callback: str | None,
+             transport: httpx.BaseTransport | None = None) -> dict:
+    """Plain SMS from the SMS-capable number (Atlas gap 2). Same resource, no whatsapp: prefix."""
+    if not (settings.twilio_account_sid and settings.twilio_auth_token and settings.twilio_sms_from):
+        raise RuntimeError("Twilio SMS is not configured: set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_SMS_FROM")
+    return _post_message(settings, settings.twilio_sms_from, to_e164, body, status_callback, transport)

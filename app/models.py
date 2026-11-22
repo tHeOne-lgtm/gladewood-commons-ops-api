@@ -592,3 +592,45 @@ class CouncilSession(Base):
     review_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class SystemFlag(Base):
+    """Runtime switches an admin flips without a deploy (the outbox kill switch and shadow mode).
+    Key, value, who, when. Nothing else."""
+    __tablename__ = "system_flags"
+    key: Mapped[str] = mapped_column(String(48), primary_key=True)
+    value: Mapped[str] = mapped_column(String(64), default="")
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class OutboxItem(Base):
+    """One outbound message waiting for an admin's approval and the four dispatch gates (Atlas gap 2,
+    2026-11-22). Body text is conversation content; never copy it into notes, templates or audit rows.
+    Data tier: Personal."""
+    __tablename__ = "outbox"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel: Mapped[str] = mapped_column(String(16), index=True)          # email | sms | whatsapp
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id", ondelete="SET NULL"), nullable=True)
+    to_address: Mapped[str] = mapped_column(Text, default="")              # filled at dispatch from the contact
+    subject: Mapped[str] = mapped_column(Text, default="")
+    body: Mapped[str] = mapped_column(Text)
+    marketing: Mapped[bool] = mapped_column(Boolean, default=False)
+    send_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    allow_outside_window: Mapped[bool] = mapped_column(Boolean, default=False)
+    in_reply_to_email_id: Mapped[int | None] = mapped_column(ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
+    thread_key: Mapped[str] = mapped_column(String(64), default="", index=True)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft|approved|held|shadowed|sent|failed|cancelled
+    hold_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lint: Mapped[dict] = mapped_column(JSONType, default=dict)
+    gate_log: Mapped[list] = mapped_column(JSONType, default=list)
+    created_by: Mapped[str] = mapped_column(String(80))                   # user id, or agent:<name> through the integration key
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_id: Mapped[int | None] = mapped_column(ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
